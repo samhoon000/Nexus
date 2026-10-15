@@ -33,11 +33,16 @@ src/
     TouchInput.ts              Pointer-event handling for the touch zones (multi-touch, capture, cancel-safe)
     VirtualJoystick.ts         Floating analog stick model: dead zone, response curve, knob offset
   player/
-    Player.ts                  Entity: owns visual group, controller, physics body, animation
+    Player.ts                  Entity: owns visual group, controller, physics body, animation; loads the character
     PlayerController.ts        Input intents → desired velocity; jump/double-jump state
     PlayerPhysics.ts           Gravity frame, capsule collision vs colliders, ground detection, platform riding
-    PlayerAnimation.ts         Hover bob, lean, squash/stretch, visor/core state
-    PlayerModel.ts             Procedural robot factory (swappable for GLB)
+    PlayerModel.ts             Visual hierarchy: root (physics pose) → body pivot at the feet → character / fallback
+    PlayerCharacter.ts         Loads NEXUS_Player.glb once, merges 84 primitives into one skinned mesh, tunes materials
+    CharacterRig.ts            Rig types + BoneChannel (drive a bone about the character's own axes)
+    CharacterPoses.ts          Pose channels and the idle / run / jump / fall / land / take-off poses
+    PlayerAnimation.ts         Blends poses by smoothed state weights, energy emissive, core halo, contact shadow
+    PlayerFallbackModel.ts     Procedural robot used only when the GLB cannot be loaded
+  assets/characters/nexus-player/  NEXUS_Player.glb (from ../Blender-1) + README with the export contract
   camera/
     CameraController.ts        Third-person orbit, smoothing, collision, kick/shake/FOV punch
                                (touch look arrives through the same applyLook() as the mouse)
@@ -244,6 +249,9 @@ lists, and timers. Switching stages never leaks.
 
 ## 10. Asset Replacement Path
 
-- `PlayerModel.ts` → replace factory body with `GLTFLoader` result; keep the collision proxy.
+- Player: done. `PlayerCharacter.ts` loads the Blender GLB (`src/assets/characters/nexus-player`),
+  the capsule in `PlayerPhysics` is untouched, and the procedural robot remains as the load-failure
+  fallback. Animation clips exported on the same armature can replace the procedural poses through
+  an `AnimationMixer` (`CharacterRig.clips`).
 - `Platforms.ts` / `Decor.ts` factories → load GLB kits and keep the `Collider` contract.
 - `AudioManager.play(id)` → `Synth` recipes map 1:1 to ids; swap to decoded buffers later.

@@ -19,6 +19,8 @@ interface ThreeGameDiagnostics {
     grounded: boolean;
     up: { x: number; y: number; z: number };
     gravityScale: number;
+    /** Which player visual is mounted: the NEXUS GLB, the procedural fallback, or neither yet. */
+    character: 'loading' | 'glb' | 'fallback';
   };
   renderer: {
     calls: number;

@@ -105,3 +105,36 @@ twice and then **died on the same S5 leg with the same 2.9 s timing**. S4 passes
 with `NEXUS_BOT_PHASE_MS=300|700` (moving-platform phase at arrival) and fails at 1100. Conclusion:
 both legs are marginal for the bot's landing prediction and vary run to run in both versions.
 Bot script gained the `NEXUS_BOT_PHASE_MS` knob for probing this.
+
+## Character integration (2026-10-16)
+
+### Intent
+Replace the procedural hover-robot with the Blender character NX-01 "Wayfinder" from the sibling
+`../Blender-1/` project as the player's visual only; physics, camera, mechanics and stages unchanged.
+
+### Decisions
+- Asset: `Blender-1/exports/NEXUS_Player.glb` (validated export: 24 rigid parts, 84 primitives,
+  20-bone skin, 9 untextured materials, +Z forward, feet at origin, no clips) copied to
+  `src/assets/characters/nexus-player/` with a README stating the bone/material contract.
+- 84 primitives would have put Stage 4 on the 320 draw-call test limit, so `PlayerCharacter.ts`
+  merges them into one `SkinnedMesh` with a group per material (9 draw calls; stage counts fell by 8).
+- No animation clips exist, so the rig is animated procedurally (`CharacterPoses.ts`,
+  `PlayerAnimation.ts`): idle / run / jump / fall / land blended by smoothed state weights plus a
+  landing crouch and take-off pulse. `CharacterRig.clips` is ready for an `AnimationMixer`.
+- Emissive strengths 4–6 clamped to the game's bloom range; `side = FrontSide` (closed shells);
+  `envMapIntensity` 1.6 on armour/trim so the metals read; scale 1.15 (1.51 m tall vs 1.2 m capsule).
+- Body pivot moved to the feet (`body.position.y = -PLAYER_CENTER_HEIGHT`); the capsule is untouched.
+- The GLB loads behind the boot sequence (`LoadingScreen.run(ready)`); on failure the old robot is
+  mounted as a fallback and diagnostics report `player.character: 'fallback'` (tests assert `'glb'`).
+
+### Verification
+`npm run typecheck`, `npm run build` (also with `VITE_BASE=/3d-Platofrmer/`, GLB served 200 from the
+preview), `npm run test:desktop` 11/11, `npm run test:mobile` 19/19, `npm run bot -- all` (all
+non-skipped legs, 0 deaths), `npm run check:gravity` 14/14, `npm run check:character` desktop +
+mobile + preview (GLB on all stages, 0 console errors; crops in `artifacts/character/final/`),
+fallback path exercised with the GLB request aborted, `?debug` boot clean.
+
+### Defects found and fixed during the pass
+- Pose writers shared a scratch pose without clearing it, so stale run thigh angles leaked into idle
+  after any run (seen on the Stage 3 wall/ceiling captures) → each writer clears first.
+- Added a 60 ms grounded grace so contact dropouts at edges cannot flicker the pose.

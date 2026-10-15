@@ -123,6 +123,8 @@ test('every stage loads and renders without errors', async ({ page }) => {
     expect(d.energyTotal).toBeGreaterThan(0);
     expect(d.renderer.calls).toBeGreaterThan(10);
     expect(d.renderer.calls, `stage ${stage} draw calls`).toBeLessThanOrEqual(320);
+    expect(d.renderer.triangles, `stage ${stage} triangles`).toBeLessThanOrEqual(750_000);
+    expect(d.player.character, `stage ${stage} player character`).toBe('glb');
     const sample = await sampleCanvas(page);
     expect(sample.buckets, `stage ${stage} canvas`).toBeGreaterThan(6);
   }

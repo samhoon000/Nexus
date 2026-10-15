@@ -169,7 +169,8 @@ export class Game {
   /** Boot: show loading, then the menu. */
   async start(): Promise<void> {
     this.loop.start();
-    await this.ui.loading.run();
+    // The character GLB streams in behind the boot sequence; the bar finishes when both are ready.
+    await this.ui.loading.run(this.player.loadCharacter());
     this.state.set('MENU');
     this.flow.enterMenu();
     const params = new URLSearchParams(window.location.search);
@@ -494,6 +495,7 @@ export class Game {
         grounded: p.grounded,
         up: { x: p.up.x, y: p.up.y, z: p.up.z },
         gravityScale: p.gravityScale,
+        character: this.player.characterKind,
       },
       renderer: {
         calls: info.render.calls,

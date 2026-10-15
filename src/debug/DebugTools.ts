@@ -1,6 +1,6 @@
 import GUI from 'lil-gui';
 import type { Game } from '../core/Game';
-import { CAMERA, PLAYER, RENDER, STAGE_COUNT } from '../utils/Constants';
+import { CAMERA, CHARACTER, PLAYER, RENDER, STAGE_COUNT } from '../utils/Constants';
 import { el } from '../utils/dom';
 
 /**
@@ -35,6 +35,15 @@ export class DebugTools {
     camera.add(CAMERA, 'FOLLOW_LAG', 0.01, 0.4, 0.01);
     camera.add(CAMERA, 'SENSITIVITY', 0.0005, 0.006, 0.0001);
     camera.close();
+    const character = this.gui.addFolder('Character');
+    character.add(CHARACTER, 'SCALE', 0.8, 1.4, 0.01).onChange((v: number) => game.player.model.character?.group.scale.setScalar(v));
+    character.add(CHARACTER, 'ENERGY_CYAN_BASE', 0, 4, 0.05);
+    character.add(CHARACTER, 'ENERGY_CYAN_GAIN', 0, 4, 0.05);
+    character.add(CHARACTER, 'ENERGY_BLUE', 0, 4, 0.05);
+    character.add(CHARACTER, 'STRIDE_RATE', 1, 4, 0.05);
+    character.add(CHARACTER, 'RUN_LEAN', 0, 0.3, 0.005);
+    character.add(CHARACTER, 'TURN_LEAN', 0, 0.3, 0.005);
+    character.close();
     const render = this.gui.addFolder('Render');
     render.add(RENDER, 'BLOOM_STRENGTH', 0, 2, 0.01).onChange((v: number) => game.scene.post.setBloomStrength(v));
     render.add({ post: true }, 'post').onChange((v: boolean) => game.scene.setPostEnabled(v));
