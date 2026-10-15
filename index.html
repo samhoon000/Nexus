@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#05070f" />
+    <meta name="description" content="NEXUS — a futuristic 3D platforming experience." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%2319e6ff' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%2319e6ff'/%3E%3C/svg%3E" />
+    <title>NEXUS</title>
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="game-canvas" aria-label="NEXUS game view"></canvas>
+
+      <div id="ui">
+        <!-- HUD -->
+        <section id="hud" class="hud is-hidden" aria-live="polite">
+          <div class="hud-energy">
+            <div class="hud-label">ENERGY</div>
+            <div class="hud-value"><span id="hud-energy-count">0</span><span class="hud-sep">/</span><span id="hud-energy-total">0</span></div>
+            <div class="hud-meter" id="hud-energy-meter"></div>
+            <div class="hud-objective" id="hud-objective">COLLECT ENERGY TO OPEN THE GATE</div>
+          </div>
+          <div class="hud-stage">
+            <div class="hud-label">STAGE <span id="hud-stage-number">1</span></div>
+            <div class="hud-stage-name" id="hud-stage-name">AWAKENING</div>
+          </div>
+          <div class="hud-hints" id="hud-hints"></div>
+          <div class="hud-toast is-hidden" id="hud-toast"></div>
+          <div class="hud-intro is-hidden" id="hud-intro">
+            <div class="hud-intro-stage">STAGE <span id="hud-intro-number">1</span></div>
+            <div class="hud-intro-name" id="hud-intro-name">AWAKENING</div>
+            <div class="hud-intro-sub" id="hud-intro-sub"></div>
+          </div>
+          <div class="hud-engage is-hidden" id="hud-engage">CLICK TO ENGAGE CONTROLS</div>
+        </section>
+
+        <!-- Loading -->
+        <section id="loading" class="screen screen--solid">
+          <div class="title-mark">NEXUS</div>
+          <div class="loading-status" id="loading-status">INITIALIZING SYSTEM...</div>
+          <div class="loading-bar"><div class="loading-fill" id="loading-fill"></div></div>
+        </section>
+
+        <!-- Main menu -->
+        <section id="menu" class="screen is-hidden">
+          <div class="menu-frame">
+            <div class="title-mark title-mark--big">NEXUS</div>
+            <div class="subtitle">A FUTURISTIC PLATFORMING EXPERIENCE</div>
+            <nav class="menu-buttons" id="menu-main">
+              <button class="btn btn--primary" id="btn-start" type="button">START</button>
+              <button class="btn" id="btn-stages" type="button">STAGES</button>
+              <button class="btn" id="btn-settings" type="button">SETTINGS</button>
+            </nav>
+            <div class="menu-panel is-hidden" id="menu-stages">
+              <div class="panel-title">SELECT STAGE</div>
+              <div class="stage-grid" id="stage-grid"></div>
+              <button class="btn btn--ghost" id="btn-stages-back" type="button">BACK</button>
+            </div>
+            <div class="controls-hint">
+              <span>WASD</span> MOVE <span>MOUSE</span> LOOK <span>SPACE</span> JUMP · DOUBLE JUMP <span>ESC</span> PAUSE
+            </div>
+          </div>
+        </section>
+
+        <!-- Pause -->
+        <section id="pause" class="screen screen--overlay is-hidden">
+          <div class="panel">
+            <div class="panel-title panel-title--big">PAUSED</div>
+            <nav class="menu-buttons">
+              <button class="btn btn--primary" id="btn-resume" type="button">RESUME</button>
+              <button class="btn" id="btn-restart-checkpoint" type="button">RESTART CHECKPOINT</button>
+              <button class="btn" id="btn-pause-settings" type="button">SETTINGS</button>
+              <button class="btn btn--ghost" id="btn-pause-menu" type="button">MAIN MENU</button>
+            </nav>
+          </div>
+        </section>
+
+        <!-- Settings -->
+        <section id="settings" class="screen screen--overlay is-hidden">
+          <div class="panel panel--wide">
+            <div class="panel-title panel-title--big">SETTINGS</div>
+            <div class="settings-grid">
+              <label class="setting"><span>MOUSE SENSITIVITY</span><input id="set-sensitivity" type="range" min="0.3" max="2.5" step="0.05" /><output id="out-sensitivity">1.00</output></label>
+              <label class="setting setting--toggle"><span>INVERT Y</span><input id="set-invert" type="checkbox" /><em class="toggle"></em></label>
+              <label class="setting"><span>MASTER VOLUME</span><input id="set-master" type="range" min="0" max="1" step="0.05" /><output id="out-master">80%</output></label>
+              <label class="setting"><span>MUSIC VOLUME</span><input id="set-music" type="range" min="0" max="1" step="0.05" /><output id="out-music">60%</output></label>
+              <label class="setting"><span>EFFECTS VOLUME</span><input id="set-sfx" type="range" min="0" max="1" step="0.05" /><output id="out-sfx">90%</output></label>
+              <label class="setting setting--toggle"><span>BLOOM</span><input id="set-bloom" type="checkbox" /><em class="toggle"></em></label>
+              <div class="setting setting--choice"><span>QUALITY</span>
+                <div class="choice" id="set-quality">
+                  <button type="button" data-value="low">LOW</button>
+                  <button type="button" data-value="medium">MEDIUM</button>
+                  <button type="button" data-value="high">HIGH</button>
+                </div>
+              </div>
+            </div>
+            <div class="panel-actions">
+              <button class="btn btn--ghost" id="btn-reset-progress" type="button">RESET PROGRESS</button>
+              <button class="btn btn--primary" id="btn-settings-back" type="button">BACK</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Stage complete -->
+        <section id="stage-complete" class="screen screen--overlay screen--clear is-hidden">
+          <div class="complete-card">
+            <div class="complete-kicker">STAGE <span id="sc-number">1</span> COMPLETE</div>
+            <div class="complete-name" id="sc-name">AWAKENING</div>
+            <div class="complete-stats">
+              <div><span>TIME</span><strong id="sc-time">00:00</strong></div>
+              <div><span>ENERGY</span><strong id="sc-energy">0 / 0</strong></div>
+            </div>
+            <div class="complete-next">LINKING NEXT SECTOR</div>
+          </div>
+        </section>
+
+        <!-- Game complete -->
+        <section id="game-complete" class="screen screen--overlay is-hidden">
+          <div class="panel panel--wide">
+            <div class="complete-kicker">SYSTEM RESTORED</div>
+            <div class="complete-title">THE CORE HAS BEEN ACTIVATED</div>
+            <div class="complete-stats complete-stats--grid">
+              <div><span>TOTAL TIME</span><strong id="gc-time">00:00</strong></div>
+              <div><span>ENERGY COLLECTED</span><strong id="gc-energy">0 / 0</strong></div>
+              <div><span>STAGES COMPLETED</span><strong id="gc-stages">5 / 5</strong></div>
+              <div><span>FALLS</span><strong id="gc-deaths">0</strong></div>
+            </div>
+            <nav class="menu-buttons menu-buttons--row">
+              <button class="btn btn--primary" id="btn-gc-restart" type="button">RESTART</button>
+              <button class="btn" id="btn-gc-menu" type="button">MAIN MENU</button>
+            </nav>
+          </div>
+        </section>
+      </div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
