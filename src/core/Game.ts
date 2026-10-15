@@ -3,7 +3,10 @@ import { SceneManager } from './SceneManager';
 import { GameLoop } from './GameLoop';
 import { GameState, type GameStateName } from './GameState';
 import { EventBus } from './EventBus';
-import { Input } from './Input';
+import { InputManager } from '../input/InputManager';
+import { detectDevice, type DeviceProfile } from './Device';
+import { AdaptiveResolution, profileFor, resolveTier, type QualitySetting } from './Quality';
+import { MobileLayout } from '../ui/MobileLayout';
 import { MaterialLibrary } from '../effects/Materials';
 import { TweenManager } from '../effects/Tween';
 import { ParticleSystem } from '../effects/Particles';
@@ -21,7 +24,7 @@ import { SaveSystem, type Settings } from '../save/SaveSystem';
 import { DebugTools } from '../debug/DebugTools';
 import { installTestHooks, removeTestHooks } from '../debug/TestHooks';
 import { createSeededRandom } from '../utils/random';
-import { CAMERA, STAGE_COUNT } from '../utils/Constants';
+import { CAMERA, STAGE_COUNT, TOUCH } from '../utils/Constants';
 import { GameFlow } from './GameFlow';
 
 /**
@@ -32,7 +35,10 @@ export class Game {
   readonly bus = new EventBus();
   readonly state = new GameState(this.bus);
   readonly scene: SceneManager;
-  readonly input: Input;
+  readonly input: InputManager;
+  readonly device: DeviceProfile;
+  readonly layout: MobileLayout;
+  readonly adaptive = new AdaptiveResolution();
   readonly materials = new MaterialLibrary();
   readonly tweens = new TweenManager();
   readonly particles: ParticleSystem;
@@ -70,7 +76,9 @@ export class Game {
 
   constructor(readonly canvas: HTMLCanvasElement) {
     this.scene = new SceneManager(canvas);
-    this.input = new Input(canvas);
+    this.device = detectDevice(this.scene.renderer);
+    this.scene.setPixelBudget(this.device.pixelBudget);
+    this.input = new InputManager(canvas, this.device.coarsePointer && this.device.touch ? 'touch' : 'pointer');
     this.particles = new ParticleSystem(() => this.rng());
     this.scene.scene.add(this.particles.points);
     this.environment = new Environment(this.scene.scene, this.materials, () => this.rng());
@@ -93,13 +101,22 @@ export class Game {
       onFinaleReached: (def) => this.flow.finale(def),
     });
     this.audio = new AudioManager(this.bus, this.save.settings);
-    this.ui = new UIManager(this.bus, this.save, {
+    this.ui = new UIManager(this.bus, this.save, this.input, {
       start: (stage) => this.flow.startRun(stage),
       resume: () => this.flow.resume(),
       restartCheckpoint: () => this.flow.restartCheckpoint(),
       mainMenu: () => this.flow.toMenu(),
       settingChanged: (key, value) => this.applySetting(key, value),
       restartRun: () => this.flow.startRun(1),
+    });
+    this.layout = new MobileLayout(this.device, this.input.mode, {
+      hidden: () => this.flow.pause(),
+      visible: () => this.audio.resumeIfSuspended(),
+    });
+    this.input.onModeChange((mode) => {
+      this.layout.setInputMode(mode);
+      this.input.clearTransient();
+      if (mode === 'pointer' && this.state.is('PLAYING')) this.input.requestLock();
     });
     this.debug = new DebugTools(this);
     this.loop = new GameLoop({
@@ -113,13 +130,17 @@ export class Game {
     this.bindFeedback();
     window.addEventListener('resize', this.onResize);
     canvas.addEventListener('pointerdown', this.onCanvasPointerDown);
+    this.bus.on('state:changed', ({ to }) => {
+      this.layout.setPlaying(to === 'PLAYING');
+    });
     this.applyPixelScale();
     installTestHooks(this);
     this.publishDiagnostics();
   }
 
-  private readonly onCanvasPointerDown = (): void => {
-    if (this.state.is('PLAYING')) this.input.requestLock();
+  private readonly onCanvasPointerDown = (event: PointerEvent): void => {
+    // Mouse play locks the cursor; a touch on the bare canvas just counts as touch mode.
+    if (event.pointerType === 'mouse' && this.state.is('PLAYING')) this.input.requestLock();
   };
 
   /** Camera and screen feedback for world events (audio has its own bindings). */
@@ -134,6 +155,15 @@ export class Game {
       this.cameraController.punchFov(5);
     });
     this.bus.on('portal:opened', () => this.cameraController.addTrauma(0.2));
+    // Haptics for the key moments (touch mode only; a no-op elsewhere).
+    const mobile = this.ui.mobile;
+    this.bus.on('checkpoint:activated', () => mobile.pulse(TOUCH.HAPTIC_EVENT));
+    this.bus.on('player:died', () => mobile.pulse(TOUCH.HAPTIC_EVENT * 2));
+    this.bus.on('portal:opened', () => mobile.pulse(TOUCH.HAPTIC_EVENT));
+    this.bus.on('gravity:changed', () => mobile.pulse(TOUCH.HAPTIC_EVENT));
+    this.bus.on('player:land', ({ impact }) => {
+      if (impact > 10) mobile.pulse(TOUCH.HAPTIC_TAP);
+    });
   }
 
   /** Boot: show loading, then the menu. */
@@ -209,6 +239,10 @@ export class Game {
       this.fps = this.fpsFrames / this.fpsAccumulator;
       this.fpsAccumulator = 0;
       this.fpsFrames = 0;
+      if (this.adaptive.sample(this.fps, this.state.is('PLAYING') && !document.hidden)) {
+        this.scene.setRenderScale(this.adaptive.scale);
+        this.applyPixelScale();
+      }
     }
 
     if (this.screenshotPaused) {
@@ -239,7 +273,9 @@ export class Game {
     this.environment.update(delta, animElapsed, this.player.position, this.scene.scene);
     this.scene.post.setTime(elapsed);
     this.updateInstability(animElapsed);
-    this.ui.setPointerLocked(this.input.isLocked, this.state.is('PLAYING'));
+    this.ui.setPointerLocked(this.input.isLocked, this.state.is('PLAYING'), this.input.needsPointerLock);
+    this.ui.setTouchControlsVisible(this.input.isTouch && this.state.is('PLAYING') && !this.bot);
+    this.ui.mobile.setDoubleJumpAvailable(this.player.controller.canDoubleJump);
     this.flow.update(delta);
     this.ui.update(delta, this.stages.stats, this.state.name);
     this.audio.update(delta);
@@ -282,16 +318,12 @@ export class Game {
         this.cameraController.invertY = Boolean(value);
         break;
       case 'bloom':
-        this.scene.post.setBloomEnabled(Boolean(value) && s.quality !== 'low');
+      case 'quality':
+        this.applyQuality();
         break;
-      case 'quality': {
-        const dpr = value === 'high' ? 2 : value === 'medium' ? 1.5 : 1;
-        this.scene.setMaxDpr(dpr);
-        this.scene.post.setBloomEnabled(s.bloom && value !== 'low');
-        this.scene.renderer.shadowMap.enabled = value !== 'low';
-        this.applyPixelScale();
+      case 'haptics':
+        this.ui.mobile.setHaptics(Boolean(value));
         break;
-      }
       case 'masterVolume':
       case 'musicVolume':
       case 'sfxVolume':
@@ -300,6 +332,26 @@ export class Game {
     }
     this.bus.emit('settings:changed', { key, value: value as number | boolean });
   }
+
+  /** Resolves the quality setting to a tier and pushes every render knob it owns. */
+  private applyQuality(): void {
+    const s = this.save.settings;
+    const setting = s.quality as QualitySetting;
+    const tier = resolveTier(setting, this.device);
+    const profile = profileFor(tier);
+    this.adaptive.setEnabled(setting === 'auto' && this.device.formFactor !== 'desktop');
+    this.scene.setRenderScale(this.adaptive.scale);
+    this.scene.setMaxDpr(profile.maxDpr);
+    this.scene.post.setBloomEnabled(s.bloom && profile.bloom);
+    this.scene.post.setBloomScale(profile.bloomScale);
+    this.scene.renderer.shadowMap.enabled = profile.shadows;
+    this.environment.setShadowMapSize(profile.shadowMapSize);
+    this.environment.setAmbientDensity(profile.ambientParticles);
+    this.applyPixelScale();
+    this.resolvedTier = tier;
+  }
+
+  private resolvedTier: QualitySetting = 'high';
 
   private applyPixelScale(): void {
     const height = this.scene.size.height * this.scene.pixelRatio;
@@ -404,6 +456,9 @@ export class Game {
       deaths: this.stages.stats.deaths,
       portalOpen: this.stages.instance?.portal.isOpen ?? false,
       dying: this.stages.dying,
+      yaw: this.cameraController.yaw,
+      pitch: this.cameraController.pitch,
+      inputMode: this.input.mode,
     };
   }
 
@@ -419,6 +474,7 @@ export class Game {
     const info = this.scene.renderer.info;
     const p = this.player.physics;
     const stage = this.stages.instance;
+    const joystick = this.ui.mobile.touch.joystick.value;
     window.__THREE_GAME_DIAGNOSTICS__ = {
       frame: this.loop.frameCount,
       elapsed: this.loop.elapsedSeconds,
@@ -454,7 +510,24 @@ export class Game {
         dpr: this.scene.pixelRatio,
       },
       fps: this.fps,
+      input: {
+        mode: this.input.mode,
+        touchControlsVisible: this.ui.mobile.isVisible,
+        joystick: { x: joystick.x, y: joystick.y },
+        jumpHeld: this.input.jumpHeld,
+      },
+      quality: {
+        setting: this.save.settings.quality,
+        tier: this.resolvedTier,
+        renderScale: this.scene.currentRenderScale,
+        formFactor: this.device.formFactor,
+      },
     };
+  }
+
+  /** Test hook: force touch or pointer mode regardless of the device. */
+  setInputMode(mode: 'pointer' | 'touch'): void {
+    this.input.setMode(mode);
   }
 
   dispose(): void {
@@ -462,6 +535,7 @@ export class Game {
     window.removeEventListener('resize', this.onResize);
     this.canvas.removeEventListener('pointerdown', this.onCanvasPointerDown);
     this.stages.dispose();
+    this.layout.dispose();
     this.input.dispose();
     this.audio.dispose();
     this.ui.dispose();

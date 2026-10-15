@@ -1,0 +1,152 @@
+stage 1  ok         1.2s  start → static#1
+stage 1  ok         1.0s  static#1 → static#2
+stage 1  ok         0.9s  static#2 → static#3
+stage 1  ok         1.1s  static#3 → static#4
+stage 1  ok         1.5s  static#4 → static#5
+stage 1  ok         1.2s  static#5 → static#6
+stage 1  ok         0.5s  static#6 → static#7
+stage 1  ok         0.9s  static#7 → static#8
+stage 1  ok         0.6s  static#8 → cp1
+stage 1  ok         1.6s  cp1 → static#10
+stage 1  ok         0.9s  static#10 → static#11
+stage 1  ok         0.7s  static#11 → plaza
+stage 1  ok         1.5s  plaza → static#13
+stage 1  ok         0.7s  static#13 → static#14
+stage 1  ok         0.7s  static#14 → static#15
+stage 1  ok         0.7s  static#15 → portal-plaza
+== Stage 1: 16/16 legs ok, 0 skipped, 0 failed, deaths 0, energy 8/10 (req 8), portal true
+stage 2  ok         1.3s  start → static#1
+stage 2  ok         4.7s  static#1 → moving#2
+stage 2  ok         3.8s  moving#2 → cp1
+stage 2  ok         0.7s  cp1 → static#4
+stage 2  ok         1.7s  static#4 → static#5
+stage 2  ok         5.2s  static#7 → moving#8
+stage 2  ok         4.9s  moving#8 → cp2
+stage 2  ok         1.7s  cp2 → moving#10
+stage 2  ok         2.6s  moving#10 → moving#11
+stage 2  ok         2.3s  moving#11 → static#12
+stage 2  ok         1.3s  static#12 → static#13
+== Stage 2: 11/15 legs ok, 4 skipped, 0 failed, deaths 0, energy 12/15 (req 12), portal true
+stage 3  ok         2.0s  start → static#1
+stage 3  ok         2.1s  static#1 → static#2
+stage 3  ok         1.0s  static#2 → tp-a
+== Stage 3: 3/9 legs ok, 6 skipped, 0 failed, deaths 0, energy 2/14 (req 10), portal false
+stage 4  ok         1.3s  start → crumble#1
+stage 4  ok         0.5s  crumble#1 → crumble#2
+stage 4  ok         0.8s  crumble#2 → crumble#3
+stage 4  ok         0.7s  crumble#3 → crumble#4
+stage 4  ok         1.0s  crumble#4 → cp1
+stage 4  ok         1.0s  cp1 → falling#6
+stage 4  ok         1.0s  falling#6 → falling#7
+stage 4  ok         0.8s  falling#7 → falling#8
+stage 4  ok         0.6s  falling#8 → static#9
+     trace: f4064 PLAYING 0.0,-19.4,-69.5a | f4067 PLAYING 0.0,-21.2,-69.7a | f4070 PLAYING 0.0,-23.0,-70.0a | f4072 PLAYING 0.0,-24.2,-70.2a | f4074 PLAYING 0.0,-25.4,-70.4a | f4077 PLAYING 0.0,-26.0,-70.5a
+stage 4  died       2.4s  static#9 → moving#10
+stage 4  ok         2.3s  moving#10 → cp2
+stage 4  ok         3.1s  cp2 → blink#12
+stage 4  ok         2.0s  blink#12 → blink#13
+stage 4  ok         1.8s  blink#13 → blink#14
+stage 4  ok         1.2s  cp3 → static#17
+stage 4  ok         1.0s  static#17 → static#18
+stage 4  ok         0.8s  static#18 → crumble#19
+stage 4  ok         0.6s  crumble#19 → crumble#20
+stage 4  ok         0.7s  crumble#20 → crumble#21
+stage 4  ok         0.7s  crumble#21 → final
+== Stage 4: 19/22 legs ok, 2 skipped, 1 failed, deaths 1, energy 12/14 (req 10), portal true
+   FAILED died: static#9 → moving#10
+stage 5  ok         7.0s  start → moving#1
+stage 5  ok         4.4s  moving#1 → cp1
+stage 5  ok         0.9s  island → crumble#6
+stage 5  ok         0.5s  crumble#6 → static#7
+stage 5  ok         1.7s  static#7 → blink#8
+stage 5  ok         2.0s  blink#8 → blink#9
+stage 5  ok         0.5s  blink#9 → crumble#10
+stage 5  ok         1.0s  crumble#10 → static#11
+stage 5  ok         0.8s  static#13 → static#14
+stage 5  ok         0.9s  static#14 → cp3
+stage 5  ok         0.7s  cp3 → static#16
+stage 5  ok         0.9s  static#16 → static#17
+stage 5  ok         0.8s  static#17 → static#18
+     trace: f6676 PLAYING 34.2,-26.2,-122.1a | f6678 PLAYING 34.4,-27.4,-122.1a | f6680 PLAYING 34.7,-28.6,-122.2a | f6682 PLAYING 34.9,-29.8,-122.3a | f6684 PLAYING 35.1,-31.0,-122.4a | f6687 PLAYING 35.4,-32.2,-122.5a
+stage 5  died       2.9s  static#18 → static#19
+stage 5  ok         0.9s  static#19 → static#20
+stage 5  ok         0.9s  static#20 → static#21
+stage 5  ok         1.8s  static#21 → core-plaza
+== Stage 5: 16/22 legs ok, 5 skipped, 1 failed, deaths 1, energy 13/18 (req 14), portal false
+   FAILED died: static#18 → static#19
+[NEXUS] Stage 1 reachability OK (16 legs)
+single      gap  2.0 rise +0.5  start → static@0,0.5,-8.5#1
+single      gap  1.5 rise +0.5  static@0,0.5,-8.5#1 → static@3,1,-15#2
+single      gap  2.5 rise +0.5  static@3,1,-15#2 → static@3,1.5,-22#3
+single      gap  3.0 rise +0.7  static@3,1.5,-22#3 → static@-3.5,2.2,-22#4
+double      gap  7.0 rise +0.3  static@-3.5,2.2,-22#4 → static@0,2.5,-33#5
+single      gap  1.5 rise +1.0  static@0,2.5,-33#5 → static@-4,3.5,-38.5#6
+single      gap  0.5 rise +0.5  static@-4,3.5,-38.5#6 → static@-7,4,-42#7
+single      gap  3.0 rise +1.0  static@-7,4,-42#7 → static@-7,5,-48#8
+single      gap  2.0 rise +0.0  static@-7,5,-48#8 → cp1
+single      gap  0.7 rise -1.5  cp1 → static@3,3.5,-61#10
+single      gap  1.4 rise -1.5  static@3,3.5,-61#10 → static@8,2,-66#11
+single      gap  1.5 rise +0.0  static@8,2,-66#11 → plaza
+single      gap  1.0 rise +0.0  plaza → static@12,2,-81.5#13
+single      gap  1.5 rise +0.0  static@12,2,-81.5#13 → static@12,2,-87#14
+single      gap  1.5 rise +0.0  static@12,2,-87#14 → static@12,2,-92.5#15
+single      gap  1.5 rise +0.0  static@12,2,-92.5#15 → portal-plaza
+[NEXUS] Stage 2 reachability OK (15 legs)
+single      gap  2.0 rise +0.0  start → static@0,0,-8#1
+single      gap  2.5 rise +0.0  static@0,0,-8#1 → moving@0,0,-14#2
+single      gap  1.0 rise +0.5  moving@0,0,-14#2 → cp1
+walk        gap  0.5 rise +0.0  cp1 → static@0,0.5,-37#4
+single      gap  3.2 rise +0.0  static@0,0.5,-37#4 → static@0,0.5,-46.5#5
+single      gap  3.0 rise +0.0  static@8,1.5,-46.5#7 → moving@8,1.5,-53#8
+single      gap  2.0 rise +0.0  moving@8,1.5,-53#8 → cp2
+single      gap  3.0 rise +0.0  cp2 → moving@8,9.5,-66#10
+single      gap  3.0 rise +0.0  moving@8,9.5,-66#10 → moving@8,9.5,-78#11
+single      gap  0.5 rise +0.5  moving@8,9.5,-78#11 → static@8,10,-89#12
+single      gap  1.4 rise +1.0  static@8,10,-89#12 → static@2,11,-95#13
+[NEXUS] Stage 3 reachability OK (9 legs)
+teleport    gap  0.0 rise +0.0  cp3 → final
+[NEXUS] Stage 4 reachability OK (22 legs)
+single      gap  1.5 rise +0.0  start → crumble@0,0,-7#1
+single      gap  2.0 rise +0.5  crumble@0,0,-7#1 → crumble@3,0.5,-12#2
+single      gap  2.0 rise +0.5  crumble@3,0.5,-12#2 → crumble@0,1,-17#3
+single      gap  2.0 rise +0.5  crumble@0,1,-17#3 → crumble@-3,1.5,-22#4
+single      gap  2.5 rise +0.5  crumble@-3,1.5,-22#4 → cp1
+single      gap  2.5 rise +0.0  cp1 → falling@0,2,-36#6
+single      gap  3.0 rise +0.0  falling@0,2,-36#6 → falling@0,2,-42#7
+single      gap  3.0 rise +0.0  falling@0,2,-42#7 → falling@0,2,-48#8
+single      gap  2.0 rise +0.0  falling@0,2,-48#8 → static@0,2,-53#9
+single      gap  2.0 rise +0.0  static@0,2,-53#9 → moving@0,2,-58#10
+single      gap  1.5 rise +1.0  moving@0,2,-58#10 → cp2
+single      gap  1.5 rise +0.0  cp2 → blink@0,3,-81#12
+single      gap  2.0 rise +0.5  blink@0,3,-81#12 → blink@0,3.5,-86#13
+single      gap  2.0 rise +0.5  blink@0,3.5,-86#13 → blink@0,4,-91#14
+single      gap  1.5 rise +0.0  blink@0,4,-91#14 → corridor
+single      gap  3.5 rise +0.0  corridor → cp3
+single      gap  4.5 rise +0.0  cp3 → static@0,4,-121#17
+single      gap  4.0 rise +1.0  static@0,4,-121#17 → static@0,5,-129#18
+single      gap  2.5 rise +0.0  static@0,5,-129#18 → crumble@0,5,-135#19
+single      gap  2.0 rise +0.5  crumble@0,5,-135#19 → crumble@0,5.5,-140#20
+single      gap  2.0 rise +0.5  crumble@0,5.5,-140#20 → crumble@0,6,-145#21
+single      gap  1.5 rise +0.0  crumble@0,6,-145#21 → final
+[NEXUS] Stage 5 reachability OK (22 legs)
+single      gap  2.5 rise +0.0  start → moving@0,0,-8#1
+single      gap  2.0 rise +0.0  moving@0,0,-8#1 → cp1
+teleport    gap  0.0 rise +0.0  cp2 → island
+single      gap  1.5 rise +0.0  island → crumble@20,8,-66#6
+single      gap  2.0 rise +0.5  crumble@20,8,-66#6 → static@20,8.5,-71#7
+single      gap  2.0 rise +0.5  static@20,8.5,-71#7 → blink@20,9,-76#8
+single      gap  2.0 rise +0.5  blink@20,9,-76#8 → blink@20,9.5,-81#9
+single      gap  2.0 rise +0.5  blink@20,9.5,-81#9 → crumble@20,10,-86#10
+single      gap  4.2 rise +0.0  crumble@20,10,-86#10 → static@20,10,-93#11
+single      gap  2.0 rise +2.0  static@26,11,-93#13 → static@26,13,-99#14
+single      gap  1.6 rise +2.0  static@26,13,-99#14 → cp3
+single      gap  0.0 rise +0.5  cp3 → static@20,15.5,-107#16
+single      gap  1.3 rise +1.0  static@20,15.5,-107#16 → static@15.669872981077807,16.5,-109.5#17
+single      gap  2.0 rise -1.0  static@15.669872981077807,16.5,-109.5#17 → static@15.669872981077805,15.5,-114.5#18
+single      gap  1.3 rise +1.0  static@15.669872981077805,15.5,-114.5#18 → static@20,16.5,-117#19
+single      gap  1.3 rise -1.0  static@20,16.5,-117#19 → static@24.33012701892219,15.5,-114.5#20
+single      gap  2.0 rise +1.0  static@24.33012701892219,15.5,-114.5#20 → static@24.33012701892219,16.5,-109.5#21
+double      gap  8.0 rise +0.5  static@24.33012701892219,16.5,-109.5#21 → core-plaza
+CONSOLE ERRORS:
+[navigation] http://127.0.0.1:5188/ at 2026-10-15T10:27:42.390Z
+BOT EXIT 0

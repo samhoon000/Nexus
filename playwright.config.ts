@@ -26,6 +26,7 @@ export default defineConfig({
   projects: [
     {
       name: 'desktop-chrome',
+      testIgnore: /mobile\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         // devices['Desktop Chrome'] sets no channel, so Playwright launches the
@@ -42,6 +43,7 @@ export default defineConfig({
       // own browser download and renders headless without the GPU. Confirm
       // Safari-specific behavior on a real device.
       name: 'mobile-chrome',
+      // Touch-specific flow plus the shared keyboard suite (a phone with a keyboard must still work).
       use: {
         ...devices['iPhone 13'],
         defaultBrowserType: 'chromium',

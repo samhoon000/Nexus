@@ -22,7 +22,8 @@ reactivate the structures that lead to the Core, and bring the world back online
 | Risk | Gaps, moving platforms, disappearing platforms, hazards, gravity transitions. |
 | What a better player does | Chains double jumps with air control, rides platform momentum, times timed platforms, finds optional orbs off the main route. |
 | Next-decision communication | Glowing orbs form a visible breadcrumb line. Platforms carry emissive edge trim. The portal is the brightest object in every stage. |
-| Non-goals | Combat, enemies, inventory, dialogue, multiplayer, mobile touch support (desktop browser only). |
+| Non-goals | Combat, enemies, inventory, dialogue, multiplayer. |
+| Platforms | Desktop browsers (keyboard + mouse) and mobile browsers (touch: floating joystick, look drag, jump + pause buttons). Same mechanics and levels on both; landscape is recommended on phones but portrait plays. |
 
 ## 3. Core Loop Contract
 

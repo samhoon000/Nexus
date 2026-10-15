@@ -18,6 +18,7 @@ export class SettingsPanel {
   private readonly music = query<HTMLInputElement>('#set-music');
   private readonly sfx = query<HTMLInputElement>('#set-sfx');
   private readonly bloom = query<HTMLInputElement>('#set-bloom');
+  private readonly haptics = query<HTMLInputElement>('#set-haptics');
   private readonly quality = query('#set-quality');
   private readonly handlers: Array<[HTMLElement, string, EventListener]> = [];
 
@@ -31,6 +32,7 @@ export class SettingsPanel {
     this.bindRange(this.sfx, 'sfxVolume', '#out-sfx', (v) => `${Math.round(v * 100)}%`);
     this.bindToggle(this.invert, 'invertY');
     this.bindToggle(this.bloom, 'bloom');
+    this.bindToggle(this.haptics, 'haptics');
     for (const button of this.quality.querySelectorAll<HTMLButtonElement>('button')) {
       this.listen(button, 'click', () => {
         const value = button.dataset.value as Settings['quality'];
@@ -84,6 +86,7 @@ export class SettingsPanel {
     this.sfx.value = String(s.sfxVolume);
     this.invert.checked = s.invertY;
     this.bloom.checked = s.bloom;
+    this.haptics.checked = s.haptics;
     for (const input of [this.sensitivity, this.master, this.music, this.sfx]) {
       (input as HTMLInputElement & { __apply?: () => void }).__apply?.();
     }

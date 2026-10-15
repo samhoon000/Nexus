@@ -11,6 +11,8 @@ import { PauseMenu } from './PauseMenu';
 import { SettingsPanel } from './SettingsPanel';
 import { StageCompleteScreen } from './StageComplete';
 import { GameCompleteScreen } from './GameComplete';
+import { MobileControls } from './MobileControls';
+import type { InputManager } from '../input/InputManager';
 
 export interface UIActions {
   start(stage: number): void;
@@ -28,6 +30,7 @@ export interface UIActions {
 export class UIManager {
   readonly loading = new LoadingScreen();
   readonly hud: HUD;
+  readonly mobile: MobileControls;
   private readonly menu: MainMenu;
   private readonly pause: PauseMenu;
   private readonly settings: SettingsPanel;
@@ -40,9 +43,13 @@ export class UIManager {
   constructor(
     bus: EventBus,
     private readonly save: SaveSystem,
+    input: InputManager,
     actions: UIActions,
   ) {
     this.hud = new HUD(bus);
+    this.mobile = new MobileControls(input);
+    this.hud.setTouchMode(input.isTouch);
+    this.unsubscribe.push(input.onModeChange((mode) => this.hud.setTouchMode(mode === 'touch')));
     this.menu = new MainMenu(save, {
       start: (stage) => actions.start(stage),
       openSettings: () => this.openSettings('menu'),
@@ -81,9 +88,11 @@ export class UIManager {
       query('#stage-complete'),
       query('#game-complete'),
     ];
-    // Wire button sounds once for every button.
+    // Wire button sounds once for every button. Hover blips only make sense for a real cursor;
+    // on touch the synthetic mouseenter would fire together with the tap.
+    const hoverCapable = matchMedia('(hover: hover)').matches;
     for (const button of document.querySelectorAll<HTMLButtonElement>('#ui button')) {
-      button.addEventListener('mouseenter', () => bus.emit('ui:hover', undefined));
+      if (hoverCapable) button.addEventListener('mouseenter', () => bus.emit('ui:hover', undefined));
       button.addEventListener('click', () => bus.emit('ui:confirm', undefined));
     }
   }
@@ -140,16 +149,23 @@ export class UIManager {
   update(delta: number, stats: RunStats, state: GameStateName): void {
     void stats;
     this.hud.update(delta, state);
+    this.mobile.update();
   }
 
-  /** Shows the "click to engage" hint while playing without pointer lock. */
-  setPointerLocked(locked: boolean, playing: boolean): void {
-    this.hud.setEngageVisible(playing && !locked);
+  /** Shows the "click to engage" hint while playing with a mouse but without pointer lock. */
+  setPointerLocked(locked: boolean, playing: boolean, needsLock: boolean): void {
+    this.hud.setEngageVisible(playing && needsLock && !locked);
+  }
+
+  /** Touch controls are only on screen while playing in touch mode. */
+  setTouchControlsVisible(visible: boolean): void {
+    this.mobile.setVisible(visible);
   }
 
   dispose(): void {
     for (const off of this.unsubscribe) off();
     this.hud.dispose();
+    this.mobile.dispose();
     this.menu.dispose();
     this.pause.dispose();
     this.settings.dispose();

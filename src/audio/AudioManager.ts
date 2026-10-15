@@ -29,10 +29,13 @@ export class AudioManager {
     const unlock = (): void => {
       void this.unlock();
     };
+    // iOS Safari only honours resume() from a touchend/click gesture; Chrome accepts pointerdown.
     window.addEventListener('pointerdown', unlock, { passive: true });
+    window.addEventListener('touchend', unlock, { passive: true });
     window.addEventListener('keydown', unlock);
     this.unsubscribe.push(() => {
       window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('touchend', unlock);
       window.removeEventListener('keydown', unlock);
     });
     this.bind(bus);
@@ -134,6 +137,12 @@ export class AudioManager {
     this.musicGain.gain.setTargetAtTime(settings.musicVolume * (this.paused ? 0.35 : 1), now, 0.2);
     this.sfxGain.gain.setTargetAtTime(settings.sfxVolume, now, 0.05);
     this.uiGain.gain.setTargetAtTime(settings.sfxVolume * 0.8, now, 0.05);
+  }
+
+  /** Returning from the background: mobile browsers suspend or "interrupt" the context. */
+  resumeIfSuspended(): void {
+    if (!this.ctx || this.ctx.state === 'running') return;
+    void this.ctx.resume().catch(() => undefined);
   }
 
   setMusicIntensity(value: number): void {

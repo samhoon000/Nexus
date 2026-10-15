@@ -66,6 +66,9 @@ export class PostPipeline {
   private readonly bloom: UnrealBloomPass;
   private readonly finish: ShaderPass;
   private bloomEnabled = true;
+  private bloomScale = 1;
+  private width = 1;
+  private height = 1;
 
   constructor(
     private readonly renderer: THREE.WebGLRenderer,
@@ -87,9 +90,18 @@ export class PostPipeline {
   }
 
   setSize(width: number, height: number, pixelRatio: number): void {
+    this.width = width;
+    this.height = height;
     this.composer.setPixelRatio(pixelRatio);
     this.composer.setSize(width, height);
-    this.bloom.setSize(width, height);
+    this.bloom.setSize(Math.max(1, Math.round(width * this.bloomScale)), Math.max(1, Math.round(height * this.bloomScale)));
+  }
+
+  /** Resolution of the bloom mip chain relative to the frame (0.5 halves its fragment cost). */
+  setBloomScale(scale: number): void {
+    if (this.bloomScale === scale) return;
+    this.bloomScale = scale;
+    this.bloom.setSize(Math.max(1, Math.round(this.width * scale)), Math.max(1, Math.round(this.height * scale)));
   }
 
   setBloomEnabled(enabled: boolean): void {

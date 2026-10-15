@@ -128,3 +128,61 @@ export const COLORS = {
 export const STAGE_COUNT = 5;
 
 export const SAVE_KEY = 'nexus.save.v1';
+
+/** Touch controls (CSS pixels unless noted). */
+export const TOUCH = {
+  /** Joystick travel radius: knob centre to base centre. */
+  JOYSTICK_RADIUS: 54,
+  /** Fraction of the radius around the centre that reads as zero. */
+  JOYSTICK_DEAD_ZONE: 0.14,
+  /** Response curve exponent (> 1 gives finer control near the centre). */
+  JOYSTICK_CURVE: 1.3,
+  /** Camera rotation per pixel of drag, radians (scaled by the sensitivity setting). */
+  LOOK_SENSITIVITY: 0.0052,
+  /** Exponential smoothing time constant for touch look, seconds. */
+  LOOK_SMOOTHING: 0.04,
+  /** Haptic pulse lengths in ms. */
+  HAPTIC_TAP: 10,
+  HAPTIC_EVENT: 22,
+} as const;
+
+export type QualityTier = 'high' | 'medium' | 'low';
+
+export interface QualityProfile {
+  /** Upper bound on the device pixel ratio used for the render buffer. */
+  maxDpr: number;
+  bloom: boolean;
+  /** Resolution factor for the bloom pass (its mip chain), 1 = full. */
+  bloomScale: number;
+  shadows: boolean;
+  shadowMapSize: number;
+  /** Fraction of the ambient particle field that is drawn. */
+  ambientParticles: number;
+}
+
+/** Render quality tiers. 'high' is the pre-mobile desktop configuration. */
+export const QUALITY: Record<QualityTier, QualityProfile> = {
+  high: { maxDpr: 2, bloom: true, bloomScale: 1, shadows: true, shadowMapSize: 2048, ambientParticles: 1 },
+  medium: { maxDpr: 1.5, bloom: true, bloomScale: 0.5, shadows: true, shadowMapSize: 1024, ambientParticles: 0.6 },
+  low: { maxDpr: 1, bloom: false, bloomScale: 0.5, shadows: false, shadowMapSize: 512, ambientParticles: 0.35 },
+};
+
+/** Per-form-factor render-buffer pixel budgets (width × height × dpr²). */
+export const PIXEL_BUDGET = {
+  phone: 1_700_000,
+  tablet: 2_600_000,
+  desktop: Number.POSITIVE_INFINITY,
+} as const;
+
+/** Adaptive resolution (only while quality is AUTO). */
+export const ADAPTIVE = {
+  /** Frame-rate thresholds (fps) that step the render scale down / up. */
+  FPS_LOW: 46,
+  FPS_HIGH: 57,
+  /** Consecutive half-second samples required before stepping. */
+  SAMPLES_DOWN: 3,
+  SAMPLES_UP: 12,
+  STEP_DOWN: 0.1,
+  STEP_UP: 0.05,
+  MIN_SCALE: 0.6,
+} as const;

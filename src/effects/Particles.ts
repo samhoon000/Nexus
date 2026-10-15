@@ -183,8 +183,10 @@ export class ParticleSystem {
 export class AmbientParticles {
   readonly points: THREE.Points;
   private readonly material: THREE.ShaderMaterial;
+  private readonly count: number;
 
   constructor(count: number, radius: number, rng: () => number) {
+    this.count = count;
     const positions = new Float32Array(count * 3);
     const seeds = new Float32Array(count);
     for (let i = 0; i < count; i += 1) {
@@ -254,6 +256,10 @@ export class AmbientParticles {
 
   setPixelScale(height: number): void {
     this.material.uniforms.uScale.value = height * 0.4;
+  }
+
+  setDensity(fraction: number): void {
+    this.points.geometry.setDrawRange(0, Math.max(0, Math.min(this.count, Math.round(this.count * fraction))));
   }
 
   update(elapsed: number, center: THREE.Vector3): void {

@@ -24,7 +24,14 @@ src/
     GameLoop.ts                rAF loop, clamped delta, fixed-step accumulator for physics
     GameState.ts               Finite state machine: LOADING, MENU, PLAYING, PAUSED, STAGE_COMPLETE, GAME_COMPLETE, TRANSITION
     EventBus.ts                Typed pub/sub between systems and UI
-    SceneManager.ts            Scene, renderer, post pipeline, resize/DPR handling
+    SceneManager.ts            Scene, renderer, post pipeline, resize / DPR / pixel-budget / render-scale handling
+    Device.ts                  Capability-based device profile (touch, form factor, GPU tier, pixel budget)
+    Quality.ts                 Quality setting → tier resolution, adaptive render scale (AUTO on phones/tablets)
+  input/
+    InputManager.ts            Platform-independent MOVE / LOOK / JUMP / PAUSE reads; input mode tracking
+    KeyboardMouseInput.ts      Keys, pointer lock, mouse delta, arrow-key look
+    TouchInput.ts              Pointer-event handling for the touch zones (multi-touch, capture, cancel-safe)
+    VirtualJoystick.ts         Floating analog stick model: dead zone, response curve, knob offset
   player/
     Player.ts                  Entity: owns visual group, controller, physics body, animation
     PlayerController.ts        Input intents → desired velocity; jump/double-jump state
@@ -33,6 +40,7 @@ src/
     PlayerModel.ts             Procedural robot factory (swappable for GLB)
   camera/
     CameraController.ts        Third-person orbit, smoothing, collision, kick/shake/FOV punch
+                               (touch look arrives through the same applyLook() as the mouse)
   world/
     World.ts                   Holds live stage content: platforms, colliders, orbs, zones
     Environment.ts             Sky dome, fog, lights, ambient particles, background megastructures
@@ -90,7 +98,7 @@ src/
 
 ```
 GameLoop.tick(realDelta)
-  ├─ Input.poll()                            (intents only)
+  ├─ InputManager reads                      (MOVE/LOOK/JUMP/PAUSE merged from keyboard + touch)
   ├─ GameState gate: if PLAYING →
   │    ├─ fixed-step accumulator (1/120 s):
   │    │    ├─ MovingPlatforms.step()        (compute frame deltas)
@@ -188,8 +196,18 @@ LOADING → MENU → PLAYING ⇄ PAUSED
                   PLAYING → GAME_COMPLETE → MENU
 ```
 
-Input is routed by state: pointer lock and gameplay keys only in `PLAYING`; `Escape` toggles
-`PAUSED`; menus receive clicks only when visible.
+Input is routed by state: pointer lock (mouse mode only) and gameplay keys only in `PLAYING`;
+`Escape`, pointer-lock loss, the touch pause button and a hidden tab all go to `PAUSED`; menus
+receive clicks/taps only when visible. Touch controls are shown only in `PLAYING` while
+`InputManager.mode === 'touch'`.
+
+### Mobile presentation
+
+`MobileLayout` sets `data-input`, `data-form` and `data-orientation` on `<html>` and a `--vvh`
+variable from the visual viewport; `styles.css` keys every responsive rule off those. The quality
+tier (`Constants.QUALITY`) owns DPR cap, bloom pass resolution, shadow map size and ambient
+particle density; `SceneManager` also applies a per-form-factor pixel budget and the adaptive
+render scale, so phones never allocate a 3× DPR frame buffer.
 
 ## 8. Testing Hooks
 
@@ -197,7 +215,10 @@ Input is routed by state: pointer lock and gameplay keys only in `PLAYING`; `Esc
 `seed(n)`, `setState(name)` for `menu`, `active-play`, `stage-1`…`stage-5`, `complete`;
 `setPausedForScreenshot(bool)`, `setReducedMotion(bool)`, `hideDebugUi(bool)`,
 plus gameplay helpers for Playwright: `teleportPlayer(x,y,z)`, `grantEnergy(n)`,
-`getState()`, `triggerAction(name)`, `setBotIntent(x,z,jump,hold)`, `getPlatforms()`.
+`getState()`, `triggerAction(name)`, `setBotIntent(x,z,jump,hold)`, `getPlatforms()`,
+`setInputMode('touch' | 'pointer')`. `__THREE_GAME_DIAGNOSTICS__` additionally reports `input`
+(mode, controls visible, joystick vector, jump held) and `quality` (setting, tier, render scale,
+form factor).
 
 `window.__THREE_GAME_DIAGNOSTICS__`: frame, elapsed, state, stage, energy, player position/
 velocity/grounded/gravity, checkpoint index, renderer counts, canvas size/DPR.

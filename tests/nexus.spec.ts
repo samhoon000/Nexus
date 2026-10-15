@@ -80,8 +80,8 @@ test('START begins Stage 1 and WASD / Space move and jump the player', async ({ 
   await page.keyboard.up('Space');
   expect(airborne.player.grounded).toBe(false);
   expect(airborne.player.position.y).toBeGreaterThan(start.player.position.y + 0.8);
-  await page.waitForTimeout(900);
-  expect((await diag(page)).player.grounded).toBe(true);
+  await page.waitForTimeout(500);
+  await page.waitForFunction(() => window.__THREE_GAME_DIAGNOSTICS__?.player.grounded === true, null, { timeout: 3000 });
   expect(errors).toEqual([]);
 });
 

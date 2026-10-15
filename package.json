@@ -12,6 +12,8 @@
     "inspect:canvas": "node scripts/inspect-threejs-canvas.mjs",
     "typecheck": "tsc --noEmit",
     "test:desktop": "playwright test --project=desktop-chrome",
+    "test:mobile": "playwright test --project=mobile-chrome",
+    "check:viewports": "node scripts/viewport-check.mjs",
     "smoke": "node scripts/smoke.mjs",
     "bot": "node scripts/bot-playtest.mjs",
     "check:gravity": "node scripts/gravity-check.mjs",

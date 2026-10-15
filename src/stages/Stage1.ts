@@ -27,6 +27,7 @@ export const STAGE_1: StageDefinition = {
   bounds: { min: [-60, -24, -130], max: [60, 40, 30] },
   energyRequired: 8,
   hints: ['WASD  MOVE', 'MOUSE  LOOK', 'SPACE  JUMP · DOUBLE JUMP'],
+  touchHints: ['LEFT STICK  MOVE', 'DRAG RIGHT  LOOK', 'TAP  JUMP · DOUBLE JUMP'],
   platforms: [
     { id: 'start', pos: [0, 0, 0], size: [8, 1.2, 8], style: 'light' },
     { pos: [0, 0.5, -8.5], size: [5, 1, 5] },

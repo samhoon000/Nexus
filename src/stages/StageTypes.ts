@@ -134,4 +134,6 @@ export interface StageDefinition {
   finale?: boolean;
   /** Control hints shown at the start of the stage. */
   hints?: string[];
+  /** Replacement hints when playing with touch controls (defaults to `hints`). */
+  touchHints?: string[];
 }

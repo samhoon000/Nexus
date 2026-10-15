@@ -174,6 +174,20 @@ export class Environment {
     this.ambient.setPixelScale(height);
   }
 
+  /** Re-allocates the key light's shadow map at a new resolution (quality tiers). */
+  setShadowMapSize(size: number): void {
+    if (this.key.shadow.mapSize.x === size) return;
+    this.key.shadow.mapSize.set(size, size);
+    this.key.shadow.map?.dispose();
+    this.key.shadow.map = null;
+    this.key.shadow.needsUpdate = true;
+  }
+
+  /** Fraction (0..1) of the ambient particle field that is drawn. */
+  setAmbientDensity(fraction: number): void {
+    this.ambient.setDensity(fraction);
+  }
+
   dispose(): void {
     this.group.removeFromParent();
     this.sky.geometry.dispose();

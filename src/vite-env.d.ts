@@ -35,6 +35,18 @@ interface ThreeGameDiagnostics {
     dpr: number;
   };
   fps: number;
+  input: {
+    mode: 'pointer' | 'touch';
+    touchControlsVisible: boolean;
+    joystick: { x: number; y: number };
+    jumpHeld: boolean;
+  };
+  quality: {
+    setting: string;
+    tier: string;
+    renderScale: number;
+    formFactor: string;
+  };
 }
 
 interface ThreeGameTestHooks {
@@ -56,6 +68,8 @@ interface ThreeGameTestHooks {
   /** World-space steering for bots; pass NaN as x to release control. */
   setBotIntent(x: number, z: number, jump: boolean, hold?: boolean): void;
   getPlatforms(): Array<{ id: string; kind: string; pos: [number, number, number]; size: [number, number, number]; enabled: boolean }>;
+  /** Force the input mode (touch controls shown / hidden) for viewport tests. */
+  setInputMode(mode: 'pointer' | 'touch'): void;
 }
 
 interface Window {

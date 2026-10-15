@@ -28,6 +28,7 @@ export class HUD {
   private introTimer = 0;
   private segments: HTMLElement[] = [];
   private required = 0;
+  private touchMode = false;
 
   constructor(bus: EventBus) {
     this.unsubscribe.push(
@@ -51,6 +52,11 @@ export class HUD {
     );
   }
 
+  /** Switches key-name hints for touch wording. */
+  setTouchMode(touch: boolean): void {
+    this.touchMode = touch;
+  }
+
   show(def: StageDefinition): void {
     setVisible(this.root, true);
     this.root.style.opacity = '1';
@@ -58,9 +64,10 @@ export class HUD {
     this.stageName.textContent = def.name;
     this.objective.textContent = 'COLLECT ENERGY TO OPEN THE GATEWAY';
     this.objective.classList.remove('is-open');
-    this.hints.replaceChildren(...(def.hints ?? []).map((hint) => el('div', undefined, hint)));
+    const hints = (this.touchMode ? def.touchHints : undefined) ?? def.hints ?? [];
+    this.hints.replaceChildren(...hints.map((hint) => el('div', undefined, hint)));
     this.hints.style.opacity = '1';
-    this.hintTimer = def.hints?.length ? 9 : 0;
+    this.hintTimer = hints.length ? 9 : 0;
     this.introNumber.textContent = String(def.id);
     this.introName.textContent = def.name;
     this.introSub.textContent = def.subtitle;

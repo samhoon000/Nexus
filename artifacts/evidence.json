@@ -1,14 +1,17 @@
 {
   "version": 1,
-  "runId": "pass-2",
+  "runId": "pass-3",
   "captures": [
-    { "mode": "desktop", "state": "menu", "report": "artifacts/pass-2/desktop-menu.json" },
-    { "mode": "desktop", "state": "stage-1", "report": "artifacts/pass-2/desktop-stage-1.json" },
-    { "mode": "desktop", "state": "stage-2", "report": "artifacts/pass-2/desktop-stage-2.json" },
-    { "mode": "desktop", "state": "stage-3", "report": "artifacts/pass-2/desktop-stage-3.json" },
-    { "mode": "desktop", "state": "stage-4", "report": "artifacts/pass-2/desktop-stage-4.json" },
-    { "mode": "desktop", "state": "stage-5", "report": "artifacts/pass-2/desktop-stage-5.json" },
-    { "mode": "desktop", "state": "paused", "report": "artifacts/pass-2/desktop-paused.json" },
-    { "mode": "desktop", "state": "complete", "report": "artifacts/pass-2/desktop-complete.json" }
+    { "mode": "desktop", "state": "menu", "report": "artifacts/pass-3/desktop-menu.json" },
+    { "mode": "desktop", "state": "stage-1", "report": "artifacts/pass-3/desktop-stage-1.json" },
+    { "mode": "desktop", "state": "stage-4", "report": "artifacts/pass-3/desktop-stage-4.json" },
+    { "mode": "desktop", "state": "paused", "report": "artifacts/pass-3/desktop-paused.json" },
+    { "mode": "mobile", "state": "menu", "report": "artifacts/pass-3/mobile-menu.json" },
+    { "mode": "mobile", "state": "stage-1", "report": "artifacts/pass-3/mobile-stage-1.json" },
+    { "mode": "mobile", "state": "stage-3", "report": "artifacts/pass-3/mobile-stage-3.json" },
+    { "mode": "mobile", "state": "stage-4", "report": "artifacts/pass-3/mobile-stage-4.json" },
+    { "mode": "mobile", "state": "stage-5", "report": "artifacts/pass-3/mobile-stage-5.json" },
+    { "mode": "mobile", "state": "paused", "report": "artifacts/pass-3/mobile-paused.json" },
+    { "mode": "mobile", "state": "complete", "report": "artifacts/pass-3/mobile-complete.json" }
   ]
 }

@@ -7,8 +7,10 @@ export interface Settings {
   musicVolume: number;
   sfxVolume: number;
   bloom: boolean;
-  /** 'high' = DPR 2, 'medium' = 1.5, 'low' = 1 and no bloom. */
-  quality: 'high' | 'medium' | 'low';
+  /** 'auto' resolves from device detection; tiers are defined in Constants.QUALITY. */
+  quality: 'auto' | 'high' | 'medium' | 'low';
+  /** Vibration on touch controls and key events (touch devices only). */
+  haptics: boolean;
 }
 
 export interface SaveData {
@@ -26,7 +28,8 @@ export const DEFAULT_SETTINGS: Settings = {
   musicVolume: 0.6,
   sfxVolume: 0.9,
   bloom: true,
-  quality: 'high',
+  quality: 'auto',
+  haptics: true,
 };
 
 const defaultSave = (): SaveData => ({

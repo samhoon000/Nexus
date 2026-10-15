@@ -12,6 +12,10 @@ export class SceneManager {
   readonly camera: THREE.PerspectiveCamera;
   readonly post: PostPipeline;
   private maxDpr: number = RENDER.MAX_DPR;
+  /** Render-buffer pixel budget (width × height × dpr²); Infinity = unlimited. */
+  private pixelBudget = Number.POSITIVE_INFINITY;
+  /** Adaptive multiplier on top of the DPR cap (0.6..1). */
+  private renderScale = 1;
   private postEnabled = true;
   private width = 1;
   private height = 1;
@@ -49,13 +53,35 @@ export class SceneManager {
     return { width: this.width, height: this.height };
   }
 
+  /** Effective DPR: device ratio capped by the quality tier, the pixel budget and the adaptive scale. */
   get pixelRatio(): number {
-    return Math.min(window.devicePixelRatio || 1, this.maxDpr);
+    const width = Math.max(1, this.canvas.clientWidth || window.innerWidth);
+    const height = Math.max(1, this.canvas.clientHeight || window.innerHeight);
+    let dpr = Math.min(window.devicePixelRatio || 1, this.maxDpr);
+    if (Number.isFinite(this.pixelBudget)) dpr = Math.min(dpr, Math.sqrt(this.pixelBudget / (width * height)));
+    dpr *= this.renderScale;
+    // Round to a stable step so tiny layout changes don't thrash the render targets.
+    return Math.max(0.5, Math.round(dpr * 100) / 100);
   }
 
   setMaxDpr(value: number): void {
     this.maxDpr = value;
     this.resize(true);
+  }
+
+  setPixelBudget(pixels: number): void {
+    this.pixelBudget = pixels;
+    this.resize(true);
+  }
+
+  setRenderScale(scale: number): void {
+    if (this.renderScale === scale) return;
+    this.renderScale = scale;
+    this.resize(true);
+  }
+
+  get currentRenderScale(): number {
+    return this.renderScale;
   }
 
   setPostEnabled(enabled: boolean): void {

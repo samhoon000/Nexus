@@ -82,7 +82,8 @@ const report = [];
 
 for (const stage of stages) {
   await hooks('setState', `stage-${stage}`);
-  await sleep(300);
+  // Optional phase offset (ms) to probe moving-platform timing sensitivity: NEXUS_BOT_PHASE_MS=400.
+  await sleep(300 + Number(process.env.NEXUS_BOT_PHASE_MS ?? 0));
   const { p: platforms } = await snapshot();
   const stageReport = { stage, legs: [], deaths: 0, energy: 0, portalOpen: false };
 

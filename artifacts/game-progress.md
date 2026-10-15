@@ -46,3 +46,62 @@ Game feel over visual complexity. Definition of done in the brief (all stages pl
 - Pointer lock re-acquisition after Esc depends on browser gesture rules; the HUD shows
   "CLICK TO ENGAGE CONTROLS" when unlocked during play.
 - Headless GPU FPS is indicative only; 58 FPS measured at 3840×2160 (DPR 2) on this machine.
+
+## Mobile support pass (2026-10-15)
+
+### Intent
+Make NEXUS fully playable on phones/tablets without changing desktop behaviour, mechanics,
+levels or visual identity. One input layer feeding the same gameplay systems.
+
+### Baseline (dev server, GPU Chromium, before changes)
+| View | Stage | Calls | Tris | FPS |
+| --- | --- | --- | --- | --- |
+| 1280x720 dpr1 | 1 / 2 / 3 / 4 / 5 | 126 / 169 / 145 / 170 / 174 | 44k / 51k / 52k / 46k / 51k | 60 |
+| 844x390 dpr3 (capped 2) | 4 | 152 | 45k | 60 |
+Geometry is cheap; mobile cost is fragment-bound: DPR 2-3 buffers, full-screen bloom (5 mips),
+2048 PCF shadow map, 900 ambient points + 2400 burst particles. No point/spot lights exist.
+
+### Plan
+1. `src/input/` — `KeyboardMouseInput` (moved from core/Input), `VirtualJoystick`, `TouchInput`,
+   `InputManager` (MOVE / LOOK / JUMP / PAUSE merged from both sources; pointer lock only for mouse).
+2. `src/core/Device.ts` — touch / form factor / GPU tier detection (no UA-only logic).
+3. `src/core/Quality.ts` — HIGH / MEDIUM / LOW profiles + AUTO resolver + adaptive render scale.
+   SceneManager pixel budget, PostPipeline bloom resolution scale, Environment shadow map size and
+   ambient particle count driven by the profile.
+4. `src/ui/MobileControls.ts` — joystick zone, look zone, jump + pause buttons, press feedback,
+   haptics. `src/ui/MobileLayout.ts` — viewport classes, orientation overlay, fullscreen,
+   visibility pause.
+5. index.html viewport meta + touch sections; styles.css responsive / safe-area / touch rules.
+6. Audio unlock on touchend + resume on visibility.
+7. Tests: `tests/mobile.spec.ts` (mobile-chrome project), `scripts/viewport-check.mjs` (8 sizes ×
+   orientations, overlap + console + canvas checks). Desktop suite + bot for regression.
+
+### Completed (mobile pass)
+- Input layer: `src/input/{InputManager,KeyboardMouseInput,TouchInput,VirtualJoystick}.ts`; Game
+  reads MOVE/LOOK/JUMP/PAUSE from InputManager only. Pointer lock only in pointer mode.
+- Touch UI: `src/ui/MobileControls.ts` (floating joystick, look zone, jump button with
+  double-jump ring, pause chip, press feedback, haptics), `src/ui/MobileLayout.ts` (data-input /
+  data-form / data-orientation, --vvh, landscape banner, fullscreen, visibility pause).
+- Quality: `src/core/Device.ts`, `src/core/Quality.ts`, `Constants.QUALITY / PIXEL_BUDGET /
+  ADAPTIVE / TOUCH`; SceneManager pixel budget + render scale; PostPipeline bloom scale;
+  Environment shadow map size + ambient density. Settings: AUTO quality, HAPTICS, LOOK SENSITIVITY.
+- Audio: touchend unlock, resume on visibilitychange.
+- Verification: `scripts/viewport-check.mjs` (12 viewports pass), `tests/mobile.spec.ts` (8 tests),
+  Playwright desktop 11/11 + mobile 19/19, production build OK.
+
+### Defects found and fixed during the mobile pass
+- `setPointerCapture` throws when the pointer is already gone (synthetic or cancelled) → guarded.
+- Portrait phones: stage label collided with the energy block → label moves under the pause chip.
+- Short landscape phones: centred flex screens could not scroll tall panels → auto-margin centring,
+  two-column settings grid under 480 px height.
+- Rotate overlay was modal while gameplay kept simulating underneath → replaced by a non-blocking
+  4.5 s banner (portrait play is allowed, per brief).
+
+### Bot variance investigation (not a regression)
+`npm run bot -- all` on the new code reported one death each on S4 (static#9 → moving#10) and
+S5 (static#18 → static#19). Checks: FPS 60 on both versions; no physics / mechanics / stage files
+changed; `check:gravity` 14/14. Stash-and-run of the pre-change code: S4 passed once, S5 passed
+twice and then **died on the same S5 leg with the same 2.9 s timing**. S4 passes on the new code
+with `NEXUS_BOT_PHASE_MS=300|700` (moving-platform phase at arrival) and fails at 1100. Conclusion:
+both legs are marginal for the bot's landing prediction and vary run to run in both versions.
+Bot script gained the `NEXUS_BOT_PHASE_MS` knob for probing this.

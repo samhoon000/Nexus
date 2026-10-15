@@ -4,7 +4,7 @@ import * as THREE from 'three';
  * Keyboard + mouse input abstracted into intents. Pointer lock is requested on the canvas while
  * playing; arrow keys rotate the camera as a no-mouse fallback (also used by automated tests).
  */
-export class Input {
+export class KeyboardMouseInput {
   private readonly keys = new Set<string>();
   private readonly keyVector = new THREE.Vector2();
   private mouseDeltaX = 0;

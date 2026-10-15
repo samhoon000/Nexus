@@ -22,6 +22,7 @@ export function installTestHooks(game: Game): void {
     triggerAction: (action: string) => game.triggerAction(action),
     setBotIntent: (x: number, z: number, jump: boolean, hold?: boolean) => game.setBotIntent(x, z, jump, hold),
     getPlatforms: () => game.getPlatformSnapshot(),
+    setInputMode: (mode: 'pointer' | 'touch') => game.setInputMode(mode),
   };
 }
 

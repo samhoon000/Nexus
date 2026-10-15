@@ -4,7 +4,7 @@
 
 NEXUS is a browser-based third-person 3D platformer prototype: a small explorer robot collects
 Energy across five futuristic stages to reactivate the Core. Exploration and movement, no
-combat. Desktop browser only. See `docs/GAME_DESIGN.md`, `docs/ARCHITECTURE.md`,
+combat. Desktop (keyboard + mouse) and mobile (touch) browsers. See `docs/GAME_DESIGN.md`, `docs/ARCHITECTURE.md`,
 `docs/DEVELOPMENT_PLAN.md`.
 
 ## Stack
@@ -21,7 +21,9 @@ npm run dev          # http://127.0.0.1:5188
 npm run build        # tsc + vite build → dist/
 npm run preview      # http://127.0.0.1:4188 (production preview)
 npm run typecheck    # tsc --noEmit
-npm run test:desktop # Playwright suite (needs: npx playwright install chromium)
+npm run test:desktop # Playwright suite, desktop project (needs: npx playwright install chromium)
+npm run test:mobile  # Playwright suite, iPhone viewport + touch project (tests/mobile.spec.ts + shared spec)
+npm run check:viewports # touch/keyboard drive + layout checks at 12 viewports → artifacts/mobile/
 npm run bot -- all   # scripted traversal of every stage (dev server must be running)
 npm run check:gravity   # gravity zones / teleporters / rotation / hazards
 npm run inspect:canvas -- --manifest artifacts/evidence.json --url http://127.0.0.1:5188 --seed 42
@@ -33,6 +35,14 @@ checkpoint/gravity, teleport-to-stage). `?stage=3` jumps straight into a stage i
 ## Architecture (short)
 
 `src/core/Game.ts` is the composition root. Systems communicate through `src/core/EventBus.ts`.
+Input is platform-independent: `src/input/InputManager.ts` merges `KeyboardMouseInput` and
+`TouchInput` (virtual joystick, look drag, jump/pause buttons from `src/ui/MobileControls.ts`) into
+MOVE / LOOK / JUMP / PAUSE reads; gameplay never knows which device produced them. `InputManager.mode`
+('pointer' | 'touch') follows the last pointer type used and drives `html[data-input]` for the CSS.
+`src/core/Device.ts` classifies the device (touch, form factor, GPU tier); `src/core/Quality.ts`
+resolves the AUTO quality setting to a `QUALITY` tier and runs the adaptive render scale.
+`src/ui/MobileLayout.ts` owns viewport attributes, the landscape banner, fullscreen and the
+visibility-pause hook.
 `GameState` is a strict FSM (LOADING, MENU, PLAYING, PAUSED, STAGE_COMPLETE, TRANSITION,
 GAME_COMPLETE); gameplay updates only run in PLAYING. Stages are declarative data in
 `src/stages/Stage1..5.ts` built by `StageBuilder` into live `World` entities. Mechanics live in
@@ -92,8 +102,15 @@ the original brief: all five stages playable end to end without developer interv
 
 ## Constraints
 
-- Desktop browser, WebGL 2, keyboard + mouse (pointer lock during play).
+- Desktop browser (keyboard + mouse, pointer lock during play) and mobile browsers (touch
+  controls, no pointer lock). Both feed the same gameplay code: never branch gameplay on device.
+- Touch UI rules: elements only meaningful for one mode carry `.touch-only` / `.pointer-only`;
+  hover styling lives under `@media (hover: hover)`; touch targets ≥ 44 px; safe-area insets via
+  `env()`; the canvas and control zones use `touch-action: none`.
 - 60 FPS target; ≤ 300 draw calls, ≤ 750k triangles, DPR cap 2, ≤ 2 post passes beyond render.
+  Mobile: quality tiers in `Constants.QUALITY` (DPR cap, bloom scale, shadow map, particle
+  density) plus a per-form-factor pixel budget (`PIXEL_BUDGET`); AUTO adapts the render scale from
+  measured FPS on phones/tablets only.
 - No backend. No new runtime dependencies without a documented reason.
 - Deployed to GitHub Pages by `.github/workflows/deploy.yml`; Vite `base` is read from `VITE_BASE`
   (set by the workflow to `/<repo>/`). Never hardcode absolute `/...` asset URLs; use Vite imports
