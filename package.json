@@ -17,6 +17,7 @@
     "smoke": "node scripts/smoke.mjs",
     "bot": "node scripts/bot-playtest.mjs",
     "check:gravity": "node scripts/gravity-check.mjs",
+    "check:character": "node scripts/character-check.mjs",
     "check:evidence": "python .claude/skills/threejs-game-director/scripts/check_evidence.py . --manifest artifacts/evidence.json"
   },
   "dependencies": {

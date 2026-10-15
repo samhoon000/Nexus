@@ -3,14 +3,17 @@ import type { MaterialLibrary } from '../effects/Materials';
 import type { TweenManager } from '../effects/Tween';
 import type { Collider } from '../world/Platforms';
 import { PlayerAnimation } from './PlayerAnimation';
+import { createCharacterRig, loadCharacterAsset } from './PlayerCharacter';
 import { PlayerController, type MoveIntent } from './PlayerController';
-import { createPlayerModel, type PlayerModelParts } from './PlayerModel';
+import { attachCharacter, attachFallback, createPlayerModel, type CharacterKind, type PlayerModelParts } from './PlayerModel';
 import { PlayerPhysics } from './PlayerPhysics';
 import { PLAYER_CENTER_HEIGHT } from '../utils/Constants';
 
 /**
  * Player entity: visual model + controller + physics + animation.
  * `position` is the body centre; feet are PLAYER_CENTER_HEIGHT below it along `up`.
+ * The NEXUS character GLB is mounted asynchronously by `loadCharacter()`; physics, camera and
+ * triggers never depend on it.
  */
 export class Player {
   readonly model: PlayerModelParts;
@@ -19,6 +22,8 @@ export class Player {
   readonly animation: PlayerAnimation;
   /** Energy ratio (0..1) drives the core brightness. */
   energyRatio = 0;
+  private characterLoad: Promise<void> | null = null;
+  private disposed = false;
 
   private readonly orientation = new THREE.Matrix4();
   private readonly targetQuaternion = new THREE.Quaternion();
@@ -28,13 +33,44 @@ export class Player {
   private readonly inverseQuat = new THREE.Quaternion();
   private readonly scratch = new THREE.Vector3();
 
-  constructor(materials: MaterialLibrary, tweens: TweenManager) {
-    this.model = createPlayerModel(materials);
+  constructor(
+    private readonly materials: MaterialLibrary,
+    tweens: TweenManager,
+  ) {
+    this.model = createPlayerModel();
     this.animation = new PlayerAnimation(this.model, tweens);
   }
 
   get group(): THREE.Group {
     return this.model.root;
+  }
+
+  /** Which visual is mounted: the GLB, the procedural fallback, or neither yet. */
+  get characterKind(): CharacterKind {
+    return this.model.kind;
+  }
+
+  /**
+   * Loads and mounts the NEXUS character once. Never rejects: a missing or broken asset logs a
+   * warning and mounts the procedural robot so the game stays playable.
+   */
+  loadCharacter(): Promise<void> {
+    if (!this.characterLoad) {
+      this.characterLoad = loadCharacterAsset()
+        .then((asset) => {
+          if (!this.disposed) attachCharacter(this.model, createCharacterRig(asset), this.materials);
+        })
+        .catch((error: unknown) => {
+          if (this.disposed) return;
+          console.warn('[NEXUS] player character unavailable, using the procedural fallback', error);
+          attachFallback(this.model, this.materials);
+        })
+        .then(() => {
+          this.animation.attach();
+          this.animation.stabilize();
+        });
+    }
+    return this.characterLoad;
   }
 
   get position(): THREE.Vector3 {
@@ -97,6 +133,7 @@ export class Player {
   }
 
   dispose(): void {
+    this.disposed = true;
     this.group.removeFromParent();
     for (const item of this.model.disposables) item.dispose();
   }

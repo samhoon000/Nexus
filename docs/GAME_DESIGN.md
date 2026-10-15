@@ -51,7 +51,7 @@ A small hovering explorer robot, ~1.0 units tall, built from authored primitive 
 - Idle hover bob; lean into movement; stretch on jump, squash on land.
 - Collision proxy: a capsule (two spheres, radius 0.35, height 0.9), independent of visuals.
 
-The visual is a `THREE.Group` returned from a factory so it can be swapped for a GLB later.
+The visual is the NX-01 "Wayfinder" GLB authored in Blender (`../Blender-1`), mounted under a pivot at the feet and animated procedurally; the collision capsule is independent of it.
 
 ## 5. Movement Feel Targets
 

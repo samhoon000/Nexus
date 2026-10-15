@@ -207,6 +207,7 @@ test('every stage loads in touch mode within the draw-call budget and without er
     expect(d.input.touchControlsVisible).toBe(true);
     expect(d.renderer.calls, `stage ${stage} draw calls`).toBeLessThanOrEqual(320);
     expect(d.renderer.triangles, `stage ${stage} triangles`).toBeLessThanOrEqual(750_000);
+    expect(d.player.character, `stage ${stage} player character`).toBe('glb');
   }
   expect(errors).toEqual([]);
 });

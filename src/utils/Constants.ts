@@ -34,6 +34,47 @@ export const PLAYER = {
 /** Height of the body centre above the feet (RADIUS + HALF_SEGMENT). */
 export const PLAYER_CENTER_HEIGHT = PLAYER.RADIUS + PLAYER.HALF_SEGMENT;
 
+/**
+ * NEXUS player character (the Blender GLB in src/assets/characters/nexus-player). Visual-only:
+ * nothing here changes the physics capsule.
+ */
+export const CHARACTER = {
+  /** Uniform scale of the GLB (1 unit = 1 m; the model is 1.316 m tall, feet at the origin). */
+  SCALE: 1.15,
+  /** Environment reflection strength for the armour and trim (the scene's RoomEnvironment is dim). */
+  ENV_MAP_INTENSITY: 1.6,
+  /** Emissive intensities for the energy materials; the GLB authors 4–6, far above the bloom range. */
+  ENERGY_CYAN_BASE: 1.5,
+  /** Added to the cyan intensity at full collected energy. */
+  ENERGY_CYAN_GAIN: 1.6,
+  ENERGY_PULSE: 0.25,
+  ENERGY_BLUE: 1.5,
+  ENERGY_VIOLET: 1.3,
+  /** Double-jump surge added to the cyan intensity and its decay per second. */
+  SURGE: 2.4,
+  SURGE_DECAY: 4,
+  /** Core halo sprite scale (world units). */
+  GLOW_SCALE: 0.34,
+  /** Stride phase advance per metre travelled (rad/m); 2π is one left+right cycle. */
+  STRIDE_RATE: 2.3,
+  /** Whole-body lean into the run and into turns (radians at full speed). */
+  RUN_LEAN: 0.07,
+  TURN_LEAN: 0.1,
+  /** Airborne whole-body pitch per m/s of vertical speed, clamped to ±AIR_PITCH_MAX. */
+  AIR_PITCH: 0.006,
+  AIR_PITCH_MAX: 0.08,
+  /** Landing crouch: base amount plus impact scaling, clamped to 1, recovering over LAND_RECOVER s. */
+  LAND_CROUCH_MIN: 0.35,
+  LAND_CROUCH_IMPACT: 0.045,
+  LAND_RECOVER: 0.3,
+  /** Take-off pulse (arms up, toes down) duration in seconds. */
+  JUMP_PULSE: 0.24,
+  /** Smoothing time constant (s) for locomotion state weights. */
+  POSE_LAG: 0.08,
+  /** Seconds a lost ground contact is ignored by the pose (edges, slopes, platform seams). */
+  GROUND_GRACE: 0.06,
+};
+
 export const CAMERA = {
   FOV: 58,
   DISTANCE: 7.2,

@@ -68,3 +68,20 @@ Average 2.0: "premium stylized" tier, not showcase — expected without generate
 - Pointer lock re-acquisition after Esc follows browser gesture rules; the HUD shows a "CLICK TO ENGAGE CONTROLS" hint.
 - Headless FPS is indicative; verify on the target machine with `?debug` (FPS overlay).
 - Project lives in OneDrive; file-sync mtime changes can trigger Vite HMR reloads during automated runs.
+
+## Character integration pass (2026-10-16)
+
+| Check | Command | Result |
+| --- | --- | --- |
+| Type check | `npm run typecheck` | clean |
+| Production build | `npm run build` (and `VITE_BASE=/3d-Platofrmer/`) | ok; `assets/NEXUS_Player-*.glb` 2.67 MB emitted, URL carries the base |
+| Production preview | `npm run check:character -- --url http://127.0.0.1:4188/3d-Platofrmer/` | GLB 200 `model/gltf-binary`; character `glb` on stages 1–5; 0 errors |
+| Playwright desktop | `npm run test:desktop` | 11 passed |
+| Playwright mobile | `npm run test:mobile` | 19 passed |
+| Bot playtest | `npm run bot -- all` | all non-skipped legs ok, 0 deaths on every stage |
+| Gravity / teleport / rotation / hazard | `npm run check:gravity` | 14/14 |
+| Character evidence | `npm run check:character` (+ `--mobile`) | draw calls 118 / 162 / 137 / 228 / 171, triangles ≤ 141k, 0 errors |
+| Fallback path | GLB request aborted via Playwright route | boots to MENU, plays, `player.character = 'fallback'`, one `[NEXUS]` warning |
+
+Motion evidence: `artifacts/character/final/run-strip.png` (side-view gait), `stage-1-jump.png`,
+`fall-player.png`, `land-player.png`, `front-player.png`, `gravity-wall*.png`, `gravity-ceiling*.png`.

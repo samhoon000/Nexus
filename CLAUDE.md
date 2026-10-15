@@ -26,6 +26,7 @@ npm run test:mobile  # Playwright suite, iPhone viewport + touch project (tests/
 npm run check:viewports # touch/keyboard drive + layout checks at 12 viewports → artifacts/mobile/
 npm run bot -- all   # scripted traversal of every stage (dev server must be running)
 npm run check:gravity   # gravity zones / teleporters / rotation / hazards
+npm run check:character # player character evidence: stats per stage + idle/run/jump/fall/land/gravity crops → artifacts/character/
 npm run inspect:canvas -- --manifest artifacts/evidence.json --url http://127.0.0.1:5188 --seed 42
 ```
 
@@ -64,6 +65,9 @@ Update order per frame: input → fixed-step gameplay (platforms → player phys
 - Events are typed in `EventBus.ts`; add new event names there first.
 - Keep `window.__THREE_GAME_TEST_HOOKS__` and `__THREE_GAME_DIAGNOSTICS__` real (see
   `src/debug/TestHooks.ts`); tests depend on them.
+- The player visual is separate from the physics capsule: `PlayerPhysics` never reads the model.
+  Pose code goes through `BoneChannel` (character-space axes) and the pose tables in
+  `src/player/CharacterPoses.ts`; tunables live in `Constants.CHARACTER`.
 - Debug UI and verbose logging are gated behind `?debug` or `import.meta.env.DEV`.
 - Level data lives in `src/stages/Stage1..5.ts`; after editing it, check the reachability log in
   the dev console and run `npm run bot -- <stage>` (never while editing `src/`: HMR reloads the page
@@ -90,9 +94,17 @@ platforms, energy-beam hazards, portals, Stage 5 Core cinematic.
 
 ## Asset strategy
 
-Everything is procedural (no Tripo/Gemini/ElevenLabs keys, no Blender). Factories return
-`THREE.Group`s with separate collision proxies so GLB models can replace them later.
-`AudioManager.play(id)` maps ids to `Synth` recipes; swap in decoded files later.
+The player is a Blender-authored GLB: `src/assets/characters/nexus-player/NEXUS_Player.glb`,
+exported from the sibling `../Blender-1/` project (its `.blend` is the source of truth; see the
+README next to the GLB for the re-export command and the bone/material name contract).
+`src/player/PlayerCharacter.ts` loads it once, merges its 84 primitives into one skinned mesh
+(one draw call per material) and clamps the emissive strengths; `PlayerAnimation.ts` animates the
+20-bone rig procedurally (idle / run / jump / fall / land) because the GLB ships no clips. If the
+GLB fails to load the procedural robot in `PlayerFallbackModel.ts` is mounted instead and the
+diagnostics report `player.character: 'fallback'` (tests assert `'glb'`). Everything else is
+procedural (no Tripo/Gemini/ElevenLabs keys). World factories return `THREE.Group`s with separate
+collision proxies so GLB kits can replace them later. `AudioManager.play(id)` maps ids to `Synth`
+recipes; swap in decoded files later.
 
 ## Testing
 
