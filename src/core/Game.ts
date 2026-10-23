@@ -99,6 +99,7 @@ export class Game {
       tweens: this.tweens,
       rng: () => this.rng(),
       theme: STAGES[0].theme,
+      getProgressSnapshot: () => this.combat?.getStage6ProgressSnapshot() ?? null,
     };
     this.flow = new GameFlow(this);
     this.stages = new StageManager(this.ctx, this.player, this.cameraController, {
@@ -113,6 +114,10 @@ export class Game {
       playerGroup: this.player.group,
       getPlayerPos: () => this.player.position,
     });
+    this.combat.setPlayerDiedCallback(() => {
+      this.stages.die('combat');
+    });
+    this.bus.on('player:respawn', () => this.input.clearTransient());
     this.combatHud = new CombatHUD(this.bus);
     this.audio = new AudioManager(this.bus, this.save.settings);
     this.ui = new UIManager(this.bus, this.save, this.input, {
@@ -275,22 +280,25 @@ export class Game {
       if (!this.stages.dying) this.cameraController.applyLook(this.look);
 
       // Combat inputs (active when awakened on stages 6-10)
-      if (this.combat?.awakened && this.stages.stageIndex >= 6) {
+      if (this.combat?.awakened && this.stages.stageIndex >= 6 && !this.stages.dying) {
         const combatInputs = {
           attackPressed: this.input.consumeAttack() || this.combatHud.consumeTouchAttack(),
+          attackHeld: this.input.isAttackHeld,
+          gunPressed: this.input.consumeGun() || this.combatHud.consumeTouchGun(),
           shieldHeld: this.input.isShieldHeld || this.combatHud.isTouchShieldHeld(),
           rebootPressed: this.input.consumeReboot() || this.combatHud.consumeTouchReboot(),
+          dodgePressed: this.input.consumeDodge() || this.combatHud.consumeTouchDodge(),
         };
         this.combat.update(delta, combatInputs);
         this.combatHud.update(this.combat, this.player.position);
       }
     } else {
-      this.input.clearTransient();
       if (this.state.is('PAUSED') && this.input.consumePause()) this.flow.resume();
+      this.input.clearTransient();
     }
 
     this.player.animate(delta, animElapsed, this.reducedMotion);
-    this.player.group.visible = !this.stages.dying;
+    this.player.group.visible = true;
     this.cameraController.update(delta, this.player.position, this.player.physics.up, this.world.colliders);
     this.stages.update(animDelta, animElapsed);
     this.tweens.update(delta);
@@ -453,6 +461,9 @@ export class Game {
       case 'die':
         this.stages.die('fall');
         break;
+      case 'hazard-death':
+        this.stages.die('hazard');
+        break;
       case 'complete-stage':
         if (this.stages.current) {
           if (this.stages.current.id === 5) {
@@ -489,11 +500,47 @@ export class Game {
       gravityScale: p.gravityScale,
       energy: this.stages.instance?.energy.count ?? 0,
       checkpoint: this.stages.instance?.checkpoints.activeIndex ?? -1,
+      checkpointId: this.stages.instance?.checkpoints.activeCheckpoint.id ?? null,
+      checkpointPosition: this.stages.instance?.checkpoints.activeCheckpoint.position.toArray() ?? null,
+      checkpointProgress: this.stages.instance?.checkpoints.activeCheckpoint.progress ?? null,
       deaths: this.stages.stats.deaths,
+      deathCause: this.stages.lastDeathCause,
       portalOpen: this.stages.instance?.portal.isOpen ?? false,
+      portalPosition: this.stages.instance?.portal.position.toArray() ?? null,
+      finaleActivation: this.stages.current?.finaleActivation?.pos ?? null,
       dying: this.stages.dying,
+      combat: this.combat ? {
+        awakened: this.combat.awakened,
+        hasArmor: this.combat.armor !== null,
+        hasSword: this.combat.sword !== null,
+        hasGun: this.combat.gun !== null,
+        health: this.combat.playerHealth,
+        lifeState: this.combat.playerLifeState,
+        hostileCount: this.combat.hostileCount,
+        companionCount: this.combat.companionCount,
+        stage6Progress: this.combat.getStage6ProgressSnapshot(),
+        robots: this.combat.activeRobots.map((robot) => ({
+          id: robot.id,
+          faction: robot.faction,
+          state: robot.state,
+          defeated: robot.isDefeated,
+          eligibleForReboot: robot.isEligibleForReboot,
+          health: robot.health,
+          position: robot.position.toArray(),
+        })),
+      } : null,
       yaw: this.cameraController.yaw,
       pitch: this.cameraController.pitch,
+      cinematicCamera: this.cameraController.cinematicTarget !== null,
+      worldObjects: this.world.root.children.map((object) => ({
+        name: object.name,
+        visible: object.visible,
+        childNames: object.children.map((child) => child.name),
+      })),
+      platformVisibility: this.stages.instance?.platforms.map((platform) => ({
+        id: platform.def.id ?? platform.group.name,
+        visible: platform.group.visible,
+      })) ?? [],
       inputMode: this.input.mode,
     };
   }

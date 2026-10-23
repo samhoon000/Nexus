@@ -3,7 +3,7 @@ import type { MaterialLibrary } from '../effects/Materials';
 import type { ParticleSystem } from '../effects/Particles';
 import type { TweenManager } from '../effects/Tween';
 import type { World } from '../world/World';
-import type { StageTheme } from './StageTypes';
+import type { StageProgressSnapshot, StageTheme } from './StageTypes';
 
 /** Shared services handed to every mechanic system when a stage is built. */
 export interface StageContext {
@@ -14,4 +14,5 @@ export interface StageContext {
   tweens: TweenManager;
   rng: () => number;
   theme: StageTheme;
+  getProgressSnapshot?: () => StageProgressSnapshot | null;
 }

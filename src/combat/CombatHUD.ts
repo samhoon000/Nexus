@@ -42,10 +42,17 @@ export class CombatHUD {
   private readonly victoryStats: HTMLElement;
   private readonly victoryNextBtn: HTMLElement;
 
+  // Skill bar & combo badge
+  private readonly skillFill: HTMLElement;
+  private readonly skillStatus: HTMLElement;
+  private readonly comboBadge: HTMLElement;
+
   private toastTimeout = 0;
   private attackTouchTriggered = false;
+  private gunTouchTriggered = false;
   private shieldTouchHeld = false;
   private rebootTouchTriggered = false;
+  private dodgeTouchTriggered = false;
   private nextStageCallback: (() => void) | null = null;
 
   constructor(private readonly bus: EventBus) {
@@ -130,8 +137,72 @@ export class CombatHUD {
     ].join(';');
     healthTrack.appendChild(this.healthFill);
 
+    // Skill Energy Bar
+    const skillHeader = document.createElement('div');
+    skillHeader.style.cssText = [
+      'display:flex',
+      'justify-content:space-between',
+      'align-items:center',
+      'margin-top:6px',
+      'margin-bottom:3px',
+    ].join(';');
+
+    const skillLabel = document.createElement('div');
+    skillLabel.textContent = 'POWER STRIKE';
+    skillLabel.style.cssText = [
+      'color:#8a5cff',
+      'font-size:9px',
+      'letter-spacing:0.14em',
+      'font-weight:bold',
+    ].join(';');
+
+    this.skillStatus = document.createElement('div');
+    this.skillStatus.textContent = '0%';
+    this.skillStatus.style.cssText = [
+      'color:rgba(180,180,255,0.7)',
+      'font-size:9px',
+      'letter-spacing:0.1em',
+    ].join(';');
+
+    skillHeader.appendChild(skillLabel);
+    skillHeader.appendChild(this.skillStatus);
+
+    const skillTrack = document.createElement('div');
+    skillTrack.style.cssText = [
+      'width:100%',
+      'height:6px',
+      'background:rgba(15,10,30,0.85)',
+      'border:1px solid rgba(138,92,255,0.3)',
+      'border-radius:2px',
+      'overflow:hidden',
+    ].join(';');
+
+    this.skillFill = document.createElement('div');
+    this.skillFill.style.cssText = [
+      'height:100%',
+      'background:linear-gradient(90deg,#8a5cff,#d066ff)',
+      'width:0%',
+      'transition:width 0.15s ease-out',
+      'box-shadow:0 0 8px rgba(138,92,255,0.7)',
+    ].join(';');
+    skillTrack.appendChild(this.skillFill);
+
+    this.comboBadge = document.createElement('div');
+    this.comboBadge.style.cssText = [
+      'margin-top:6px',
+      'color:#ffaa00',
+      'font-size:10px',
+      'font-weight:bold',
+      'letter-spacing:0.16em',
+      'display:none',
+      'text-shadow:0 0 10px rgba(255,170,0,0.8)',
+    ].join(';');
+
     healthContainer.appendChild(healthHeader);
     healthContainer.appendChild(healthTrack);
+    healthContainer.appendChild(skillHeader);
+    healthContainer.appendChild(skillTrack);
+    healthContainer.appendChild(this.comboBadge);
     this.container.appendChild(healthContainer);
 
     // -------------------------------------------------------------------------
@@ -154,6 +225,7 @@ export class CombatHUD {
     ].join(';');
 
     this.objTitle = document.createElement('div');
+    this.objTitle.id = 'combat-obj-title';
     this.objTitle.textContent = 'STAGE 6 · WAVE 1 / 6';
     this.objTitle.style.cssText = [
       'color:#00f0ff',
@@ -165,6 +237,7 @@ export class CombatHUD {
     ].join(';');
 
     this.objDesc = document.createElement('div');
+    this.objDesc.id = 'combat-obj-desc';
     this.objDesc.textContent = 'Neutralize hostile robotic forces.';
     this.objDesc.style.cssText = [
       'color:rgba(210,235,255,0.85)',
@@ -174,6 +247,7 @@ export class CombatHUD {
     ].join(';');
 
     this.objProgress = document.createElement('div');
+    this.objProgress.id = 'combat-obj-progress';
     this.objProgress.textContent = '0 / 4 NEUTRALIZED';
     this.objProgress.style.cssText = [
       'color:#8a5cff',
@@ -548,8 +622,54 @@ export class CombatHUD {
       this.rebootTouchTriggered = true;
     });
 
+    // Gun Button
+    const btnGun = document.createElement('button');
+    btnGun.textContent = 'GUN';
+    btnGun.style.cssText = [
+      'width:68px',
+      'height:68px',
+      'border-radius:50%',
+      'background:radial-gradient(circle,rgba(255,170,0,0.35) 0%,rgba(30,14,6,0.8) 80%)',
+      'border:2px solid #ffaa00',
+      'color:#ffffff',
+      'font-family:Orbitron,sans-serif',
+      'font-size:10px',
+      'font-weight:bold',
+      'letter-spacing:0.12em',
+      'box-shadow:0 0 16px rgba(255,170,0,0.5)',
+      'touch-action:none',
+    ].join(';');
+    btnGun.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      this.gunTouchTriggered = true;
+    });
+
+    // Dodge Button
+    const btnDodge = document.createElement('button');
+    btnDodge.textContent = 'DODGE';
+    btnDodge.style.cssText = [
+      'width:68px',
+      'height:68px',
+      'border-radius:50%',
+      'background:radial-gradient(circle,rgba(0,240,255,0.3) 0%,rgba(6,25,35,0.8) 80%)',
+      'border:2px solid #00f0ff',
+      'color:#ffffff',
+      'font-family:Orbitron,sans-serif',
+      'font-size:10px',
+      'font-weight:bold',
+      'letter-spacing:0.12em',
+      'box-shadow:0 0 16px rgba(0,240,255,0.5)',
+      'touch-action:none',
+    ].join(';');
+    btnDodge.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      this.dodgeTouchTriggered = true;
+    });
+
     this.mobileCombatControls.appendChild(btnShield);
     this.mobileCombatControls.appendChild(btnAttack);
+    this.mobileCombatControls.appendChild(btnDodge);
+    this.mobileCombatControls.appendChild(btnGun);
     this.mobileCombatControls.appendChild(btnReboot);
     this.container.appendChild(this.mobileCombatControls);
 
@@ -585,6 +705,10 @@ export class CombatHUD {
       if (wave < totalWaves) {
         this.showToast(`WAVE ${wave} CLEARED — REINFORCEMENTS INCOMING`);
       }
+    });
+
+    this.bus.on('toast', ({ text }) => {
+      this.showToast(text);
     });
 
     this.bus.on('combat:boss:update', ({ name, hp, maxHp, phase, title }) => {
@@ -667,6 +791,12 @@ export class CombatHUD {
     return val;
   }
 
+  consumeTouchGun(): boolean {
+    const val = this.gunTouchTriggered;
+    this.gunTouchTriggered = false;
+    return val;
+  }
+
   isTouchShieldHeld(): boolean {
     return this.shieldTouchHeld;
   }
@@ -677,10 +807,39 @@ export class CombatHUD {
     return val;
   }
 
+  consumeTouchDodge(): boolean {
+    const val = this.dodgeTouchTriggered;
+    this.dodgeTouchTriggered = false;
+    return val;
+  }
+
   update(combat: CombatSystem, playerPos: THREE.Vector3): void {
     // Health bar fill
     const hpRatio = Math.max(0, Math.min(1, combat.playerHealth / combat.playerMaxHealth));
     this.healthFill.style.width = `${(hpRatio * 100).toFixed(1)}%`;
+
+    // Skill energy fill
+    const skillRatio = Math.max(0, Math.min(1, combat.skillEnergy / combat.skillMaxEnergy));
+    this.skillFill.style.width = `${(skillRatio * 100).toFixed(1)}%`;
+    if (combat.isSkillActive) {
+      this.skillStatus.textContent = 'POWER STRIKE ACTIVE!';
+      this.skillStatus.style.color = '#00f0ff';
+    } else if (combat.skillEnergy >= 50) {
+      this.skillStatus.textContent = 'READY (PASSIVE BOOST)';
+      this.skillStatus.style.color = '#ffaa00';
+    } else {
+      this.skillStatus.textContent = `${Math.floor(combat.skillEnergy)}%`;
+      this.skillStatus.style.color = 'rgba(180,180,255,0.7)';
+    }
+
+    // Combo badge
+    if (combat.comboHits > 1) {
+      this.comboBadge.style.display = 'block';
+      this.comboBadge.textContent = combat.comboHits >= 3 ? 'FINISHER STRIKE READY!' : `${combat.comboHits}x COMBO`;
+      this.comboBadge.style.color = combat.comboHits >= 3 ? '#ff3300' : '#ffaa00';
+    } else {
+      this.comboBadge.style.display = 'none';
+    }
 
     // Counts
     this.enemyCount.textContent = `HOSTILE FORCES: ${combat.hostileCount}`;

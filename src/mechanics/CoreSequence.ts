@@ -5,7 +5,7 @@ import { ArmorSystem } from '../combat/ArmorSystem';
 import { EnergySword } from '../combat/EnergySword';
 
 /**
- * STAGE 5 CORE FINALE — 9-Step Cyan Knight Awakening Cinematic.
+ * STAGE 5 CORE FINALE - 9-Step Cyan Knight Awakening Cinematic.
  *
  * Sequence steps:
  *  1. The Core releasing cyan and violet energy (0.0 - 1.5s)
@@ -18,7 +18,7 @@ import { EnergySword } from '../combat/EnergySword';
  *  8. The energy sword materializing and attaching to hero's hand (9.0 - 10.2s)
  *  9. The completed Cyan Knight revealing the finished armor (10.2 - 12.0s)
  *
- * Skipping instantly completes the transformation and equips all armor and sword.
+ * The transformation always runs to completion before Stage 5 is recorded.
  */
 export class CoreSequence {
   private time = 0;
@@ -27,12 +27,13 @@ export class CoreSequence {
   private readonly cameraPos = new THREE.Vector3();
   private readonly lookAt = new THREE.Vector3();
   private readonly scratch = new THREE.Vector3();
+  private readonly cameraRight = new THREE.Vector3();
+  private readonly hiddenObjects: Array<{ object: THREE.Object3D; visible: boolean }> = [];
   private coreMaterial: THREE.MeshStandardMaterial | null = null;
   private ringMaterial: THREE.MeshStandardMaterial | null = null;
   private coreOrb: THREE.Object3D | null = null;
   private wavesFired = 0;
   private ignited = false;
-  private skipped = false;
 
   armor: ArmorSystem | null = null;
   sword: EnergySword | null = null;
@@ -42,7 +43,7 @@ export class CoreSequence {
   private readonly captions: Array<{ time: number; text: string }> = [
     { time: 0.2, text: 'NEXUS PROTOCOL: Core energy resonance critical.' },
     { time: 1.5, text: 'NEXUS PROTOCOL: Guardian synchronization initiated.' },
-    { time: 3.0, text: 'Suit Assembly: HELMET FORMED — VISOR ONLINE' },
+    { time: 3.0, text: 'Suit Assembly: HELMET FORMED - VISOR ONLINE' },
     { time: 4.2, text: 'Suit Assembly: CHEST CARAPACE & CIRCULAR REACTOR ENGAGED' },
     { time: 5.4, text: 'Suit Assembly: ANGULAR PAULDRONS & GAUNTLETS LOCKED' },
     { time: 6.6, text: 'Suit Assembly: ARMORED WAIST, HIPS & THIGH CHASSIS' },
@@ -59,6 +60,16 @@ export class CoreSequence {
 
   start(): void {
     const game = this.game;
+    for (const name of ['static-batches', 'portal', 'decor-core']) {
+      const object = game.world.root.getObjectByName(name);
+      if (!object) continue;
+      this.hiddenObjects.push({ object, visible: object.visible });
+      object.visible = false;
+    }
+    for (const platform of game.stages.instance?.platforms ?? []) {
+      this.hiddenObjects.push({ object: platform.group, visible: platform.group.visible });
+      platform.group.visible = false;
+    }
     const core = game.world.root.getObjectByName('decor-core');
     if (core) {
       this.coreOrb = core.getObjectByName('coreOrb') ?? null;
@@ -71,15 +82,19 @@ export class CoreSequence {
       this.coreCenter.copy(game.player.position).add(new THREE.Vector3(0, 8, -14));
     }
 
-    this.lookAt.copy(this.coreCenter);
-    this.cameraPos.copy(game.player.position).add(new THREE.Vector3(8, 2, 20));
-    game.cameraController.cinematicTarget = this.lookAt;
-    game.cameraController.cinematicPosition = this.cameraPos;
-
     game.player.controller.facing
       .subVectors(this.coreCenter, game.player.position)
       .setY(0)
       .normalize();
+    const facing = game.player.controller.facing;
+    this.cameraRight.crossVectors(facing, game.player.physics.up).normalize();
+    this.lookAt.copy(game.player.position).addScaledVector(game.player.physics.up, 0.75);
+    this.cameraPos.copy(game.player.position)
+      .addScaledVector(facing, 3.7)
+      .addScaledVector(this.cameraRight, 1.7)
+      .addScaledVector(game.player.physics.up, 1.8);
+    game.cameraController.cinematicTarget = this.lookAt;
+    game.cameraController.cinematicPosition = this.cameraPos;
 
     game.audio.setMusicIntensity(0.95);
 
@@ -90,39 +105,11 @@ export class CoreSequence {
       this.sword = new EnergySword(rig);
     }
 
-    // Show skip hint
-    showSkipPrompt();
-  }
-
-  skip(): void {
-    if (this.skipped || this.done) return;
-    this.skipped = true;
-    hideSkipPrompt();
-
-    this.armor?.snapVisible();
-    this.sword?.snapVisible();
-
-    if (this.armor && this.sword) {
-      this.game.combat?.setAwakened(this.armor, this.sword);
-    }
-
-    this.finishSequence();
   }
 
   update(delta: number): void {
     if (this.done) return;
     const game = this.game;
-
-    // Skip input
-    if (
-      this.time > 0.5 &&
-      (game.input.keyboard.isDown('Space') ||
-        game.input.keyboard.isDown('KeyE') ||
-        game.input.keyboard.isDown('Escape'))
-    ) {
-      this.skip();
-      return;
-    }
 
     this.time += delta;
     const t = this.time;
@@ -191,18 +178,6 @@ export class CoreSequence {
         size: 0.26,
         drag: 0.1,
       });
-      // Camera transitions toward framing hero
-      const p = (t - 1.5) / 1.5;
-      this.cameraPos.lerpVectors(
-        this.cameraPos,
-        game.player.position.clone().add(new THREE.Vector3(5, 2.2, 7)),
-        p * delta * 2,
-      );
-      this.lookAt.lerpVectors(
-        this.lookAt,
-        game.player.position.clone().add(new THREE.Vector3(0, 1.3, 0)),
-        p * delta * 2,
-      );
     }
 
     // -------------------------------------------------------------------------
@@ -334,18 +309,6 @@ export class CoreSequence {
       game.cameraController.punchFov(6);
     }
 
-    // Dynamic camera sweep around the fully assembled hero during step 9
-    if (t >= 10.2) {
-      const orbitAngle = (t - 10.2) * 0.9;
-      const radius = 6.0;
-      this.cameraPos.set(
-        game.player.position.x + Math.sin(orbitAngle) * radius,
-        game.player.position.y + 1.8 + Math.cos(orbitAngle * 0.5) * 0.4,
-        game.player.position.z + Math.cos(orbitAngle) * radius,
-      );
-      this.lookAt.copy(game.player.position).add(new THREE.Vector3(0, 1.3, 0));
-    }
-
     // Ambient Core pulsation & lighting waves
     const power = THREE.MathUtils.clamp((t - 1.5) / 6.0, 0, 1);
     game.environment.setPower(easeInOutCubic(power));
@@ -393,15 +356,20 @@ export class CoreSequence {
 
   private finishSequence(): void {
     this.done = true;
-    hideSkipPrompt();
+    this.restoreSceneVisibility();
     this.onComplete();
   }
 
   dispose(): void {
     this.done = true;
-    hideSkipPrompt();
+    this.restoreSceneVisibility();
     this.game.cameraController.cinematicTarget = null;
     this.game.cameraController.cinematicPosition = null;
+  }
+
+  private restoreSceneVisibility(): void {
+    for (const { object, visible } of this.hiddenObjects) object.visible = visible;
+    this.hiddenObjects.length = 0;
   }
 }
 
@@ -429,31 +397,4 @@ function showAwakeningCaption(text: string): void {
   (el as unknown as { _timer?: number })._timer = window.setTimeout(() => {
     if (el) el.style.opacity = '0';
   }, 2600);
-}
-
-function showSkipPrompt(): void {
-  let skip = document.getElementById('nexus-skip-prompt');
-  if (!skip) {
-    skip = document.createElement('div');
-    skip.id = 'nexus-skip-prompt';
-    skip.style.cssText = [
-      'position:fixed', 'bottom:24px', 'right:28px',
-      'color:rgba(210,240,255,0.65)', 'font-family:Orbitron,Segoe UI,sans-serif',
-      'font-size:11px', 'letter-spacing:0.18em', 'z-index:910',
-      'background:rgba(5,10,20,0.6)', 'padding:6px 14px',
-      'border-radius:3px', 'border:1px solid rgba(0,240,255,0.25)',
-      'pointer-events:auto', 'cursor:pointer',
-    ].join(';');
-    skip.textContent = 'PRESS [SPACE] OR [E] TO SKIP';
-    skip.addEventListener('click', () => {
-      window.dispatchEvent(new CustomEvent('nexus:skip-cinematic'));
-    });
-    document.body.appendChild(skip);
-  }
-  skip.style.display = 'block';
-}
-
-function hideSkipPrompt(): void {
-  const skip = document.getElementById('nexus-skip-prompt');
-  if (skip) skip.style.display = 'none';
 }

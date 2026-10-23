@@ -20,12 +20,25 @@ export interface PlatformDef {
   blink?: { on: number; off: number; phase?: number };
   /** Platforms owned by an activator group start disabled until activated. */
   group?: string;
+  /** Adds a solid platform collider without rendering a second overlapping surface. */
+  colliderOnly?: boolean;
+  /** Renders platform geometry but omits its collider. */
+  visualOnly?: boolean;
   /** Optional id for debugging / referencing. */
   id?: string;
 }
 
 export interface CheckpointDef {
+  id?: string;
   pos: Vec3Tuple;
+  facing?: Vec3Tuple;
+}
+
+export interface StageProgressSnapshot {
+  section: number;
+  completedSections: number[];
+  spawnedSections: number[];
+  finished: boolean;
 }
 
 export interface GravityZoneDef {
@@ -130,8 +143,10 @@ export interface StageDefinition {
   activators?: ActivatorDef[];
   decor?: DecorDef[];
   portal: PortalDef;
-  /** Stage 5 marks the finale: reaching the portal runs the Core sequence instead. */
+  /** Stage 5 marks a finale sequence activated separately from its exit portal. */
   finale?: boolean;
+  /** One-shot proximity trigger for a stage-specific finale sequence. */
+  finaleActivation?: { pos: Vec3Tuple; radius: number };
   /** Control hints shown at the start of the stage. */
   hints?: string[];
   /** Replacement hints when playing with touch controls (defaults to `hints`). */

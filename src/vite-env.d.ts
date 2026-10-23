@@ -72,6 +72,11 @@ interface ThreeGameTestHooks {
   getPlatforms(): Array<{ id: string; kind: string; pos: [number, number, number]; size: [number, number, number]; enabled: boolean }>;
   /** Force the input mode (touch controls shown / hidden) for viewport tests. */
   setInputMode(mode: 'pointer' | 'touch'): void;
+  defeatHostiles?(): void;
+  damagePlayer?(amount: number): void;
+  hostileAttackPlayer?(): void;
+  damageRobot?(robotId: string, amount: number): void;
+  spawnHostile?(x: number, y: number, z: number, id: string): void;
 }
 
 interface Window {

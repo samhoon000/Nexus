@@ -161,6 +161,21 @@ test('collecting the required energy opens the portal and entering it completes 
   expect(errors).toEqual([]);
 });
 
+test('Stage 4 portal still completes the stage and loads Stage 5', async ({ page }) => {
+  const { errors } = await boot(page);
+  await hooks(page, 'setState', 'stage-4');
+  await hooks(page, 'grantEnergy', 10);
+  await page.waitForFunction(() => window.__THREE_GAME_TEST_HOOKS__?.getState().portalOpen === true);
+  await hooks(page, 'teleportPlayer', 0, 6, -156);
+  await page.waitForFunction(() => window.__THREE_GAME_DIAGNOSTICS__?.state === 'STAGE_COMPLETE', null, { timeout: 8000 });
+  await page.waitForFunction(
+    () => window.__THREE_GAME_DIAGNOSTICS__?.stage === 5 && window.__THREE_GAME_DIAGNOSTICS__?.state === 'PLAYING',
+    null,
+    { timeout: 12_000 },
+  );
+  expect(errors).toEqual([]);
+});
+
 test('ESC pauses, RESUME continues and gameplay input is ignored while paused', async ({ page }) => {
   await boot(page);
   await hooks(page, 'setState', 'active-play');
@@ -199,6 +214,130 @@ test('stage completion unlocks the next stage in the save file', async ({ page }
   const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('nexus.save.v1') ?? '{}'));
   expect(saved.highestUnlocked).toBe(2);
   expect(saved.completed).toContain(1);
+});
+
+test('Stage 5 compact armor box supports landing and grounded movement', async ({ page }) => {
+  await boot(page);
+  await hooks(page, 'startStage', 5);
+  await page.waitForFunction(
+    () => window.__THREE_GAME_DIAGNOSTICS__?.stage === 5 && window.__THREE_GAME_DIAGNOSTICS__?.state === 'PLAYING',
+    null,
+    { timeout: 10_000 },
+  );
+  const upgradeCollider = (await hooks(page, 'getPlatforms') as Array<{ id: string; pos: number[]; size: number[]; enabled: boolean }>).find((platform) => platform.id === 'armor-upgrade-platform');
+  expect(upgradeCollider).toMatchObject({ pos: [20, 17, -121], size: [3.6, 0.58, 2.8], enabled: true });
+  await hooks(page, 'teleportPlayer', 18.5, 17.4, -121.5);
+  await page.waitForFunction(() => window.__THREE_GAME_DIAGNOSTICS__?.player.grounded === true, null, { timeout: 3_000 });
+  const landed = await diag(page);
+    expect(landed.player.position.y).toBeCloseTo(17.6, 1);
+  await hooks(page, 'setBotIntent', 0.2, 0, false, false);
+  await page.waitForTimeout(120);
+  await hooks(page, 'setBotIntent', Number.NaN, 0, false, false);
+  await page.waitForFunction(() => window.__THREE_GAME_DIAGNOSTICS__?.player.grounded === true, null, { timeout: 3_000 });
+  const walked = await diag(page);
+    expect(walked.player.position.y).toBeCloseTo(17.6, 1);
+  expect(walked.player.position.x).not.toBeCloseTo(landed.player.position.x, 2);
+});
+
+test('Stage 5 armor unlock opens a traversable exit and portal entry completes the stage', async ({ page }) => {
+  test.setTimeout(90_000);
+  await boot(page);
+  await hooks(page, 'startStage', 5);
+  await page.waitForFunction(
+    () => window.__THREE_GAME_DIAGNOSTICS__?.stage === 5 && window.__THREE_GAME_DIAGNOSTICS__?.state === 'PLAYING',
+    null,
+    { timeout: 10_000 },
+  );
+  const corePlaza = (await hooks(page, 'getPlatforms') as Array<{ id: string; pos: number[]; size: number[]; enabled: boolean }>).find((platform) => platform.id === 'core-plaza');
+  expect(corePlaza).toMatchObject({ pos: [20, 16.4, -124], size: [14, 1.2, 14], enabled: false });
+  await hooks(page, 'teleportPlayer', 20, 17.4, -121);
+  await page.waitForFunction(
+    () => window.__THREE_GAME_DIAGNOSTICS__?.state === 'PLAYING'
+      && window.__THREE_GAME_TEST_HOOKS__?.getState().portalOpen === true,
+    null,
+    { timeout: 30_000, polling: 100 },
+  );
+
+  await page.waitForFunction(
+    () => window.__THREE_GAME_TEST_HOOKS__?.getPlatforms()
+      .filter((platform) => platform.id.startsWith('stage5-exit-rise-') && platform.enabled).length === 2,
+    null,
+    { timeout: 5_000 },
+  );
+  expect(await page.locator('#nexus-stage5-completion').count()).toBe(0);
+  await hooks(page, 'setBotIntent', 0, -1, false, false);
+  await page.waitForFunction(() => window.__THREE_GAME_DIAGNOSTICS__?.state === 'STAGE_COMPLETE', null, { timeout: 8_000 });
+  await hooks(page, 'setBotIntent', Number.NaN, 0, false, false);
+  await expect(page.locator('#stage-complete')).toBeVisible();
+
+  await expect(page.locator('#nexus-stage5-completion')).toContainText('LEVEL 5 COMPLETED');
+  await expect(page.locator('#nexus-stage5-completion')).toContainText('ARMOR IS BONDED');
+  await expect(page.locator('#nexus-story-transition')).toBeHidden();
+  await expect(page.locator('#nexus-skip-prompt')).toBeHidden();
+  await expect(page.locator('#nexus-stage5-completion')).toHaveCSS('pointer-events', 'none');
+  const completed = await page.evaluate(() => ({
+    stageState: window.__THREE_GAME_TEST_HOOKS__!.getState(),
+    portalOpen: window.__THREE_GAME_TEST_HOOKS__!.getState().portalOpen,
+    state: window.__THREE_GAME_DIAGNOSTICS__?.state,
+    stage: window.__THREE_GAME_DIAGNOSTICS__?.stage,
+    save: JSON.parse(localStorage.getItem('nexus.save.v1') ?? '{}'),
+    oldBoardText: document.body.innerText.includes('PRESS CONTINUE TO COMPLETE LEVEL 5'),
+    stage6WarningVisible: document.getElementById('nexus-stage6-warning')?.style.display === 'block',
+  }));
+  expect(completed).toMatchObject({ portalOpen: true, state: 'STAGE_COMPLETE', stage: 5, oldBoardText: false, stage6WarningVisible: false });
+  expect(completed.save.completed).toContain(5);
+  expect(completed.save.highestUnlocked).toBeGreaterThanOrEqual(6);
+  expect(completed.stageState.finaleActivation).toEqual([20, 18, -121]);
+
+  await page.screenshot({ path: 'artifacts/verify-level5-to-6/stage5-portal-open.png' });
+  await hooks(page, 'setBotIntent', 0, -1, false, false);
+  await page.waitForFunction(() => window.__THREE_GAME_DIAGNOSTICS__?.state === 'STAGE_COMPLETE', null, { timeout: 8_000 });
+  await hooks(page, 'setBotIntent', Number.NaN, 0, false, false);
+  await expect(page.locator('#stage-complete')).toBeVisible();
+  await expect(page.locator('#sc-number')).toHaveText('5');
+  await expect(page.locator('#sc-name')).toHaveText('THE CORE');
+  await page.waitForFunction(() => window.__THREE_GAME_DIAGNOSTICS__?.stage === 6, null, { timeout: 20_000 });
+  await expect(page.locator('#nexus-stage6-warning')).toContainText('ROBOTS ARE NEARBY, BE AWARE');
+  await expect(page.locator('#nexus-stage5-completion')).toBeHidden();
+  await expect(page.locator('#hud-intro')).toBeHidden();
+  await expect(page.locator('#nexus-controls-overlay')).toBeHidden();
+  await page.waitForFunction(() => {
+    const warning = document.getElementById('nexus-stage6-warning');
+    const controls = document.getElementById('nexus-controls-overlay');
+    return warning?.style.display === 'none' && controls?.style.display === 'flex';
+  }, null, { timeout: 5_000 });
+  expect((await diag(page)).state).not.toBe('PLAYING');
+  await page.locator('#btn-controls-dismiss').click();
+  await page.waitForFunction(
+    () => window.__THREE_GAME_DIAGNOSTICS__?.stage === 6 && window.__THREE_GAME_DIAGNOSTICS__?.state === 'PLAYING',
+    null,
+    { timeout: 5_000 },
+  );
+  expect((await hooks(page, 'getState') as { portalOpen: boolean }).portalOpen).toBe(true);
+  expect((await hooks(page, 'getState') as { portalPosition: number[] }).portalPosition).toEqual([0, 2.2, -139]);
+  await hooks(page, 'damagePlayer', 1000);
+  await page.waitForFunction(() => window.__THREE_GAME_TEST_HOOKS__?.getState().dying === false, null, { timeout: 8_000 });
+  expect((await hooks(page, 'getState') as { portalOpen: boolean }).portalOpen).toBe(true);
+  await hooks(page, 'startStage', 6);
+  await page.waitForFunction(() => window.__THREE_GAME_DIAGNOSTICS__?.stage === 6, null, { timeout: 5_000 });
+  expect((await hooks(page, 'getState') as { portalOpen: boolean }).portalOpen).toBe(true);
+  expect((await hooks(page, 'getState') as { portalPosition: number[] }).portalPosition).toEqual([0, 2.2, -139]);
+});
+
+test('Level 6 red portal remains open and exits through the far sanctum ring', async ({ page }) => {
+  await boot(page);
+  await hooks(page, 'startStage', 6);
+  await page.waitForFunction(() => window.__THREE_GAME_DIAGNOSTICS__?.stage === 6, null, { timeout: 10_000 });
+  await page.locator('#btn-controls-dismiss').click();
+  await page.waitForFunction(() => window.__THREE_GAME_DIAGNOSTICS__?.state === 'PLAYING', null, { timeout: 5_000 });
+  await hooks(page, 'teleportPlayer', 0, 4, -134);
+  await page.waitForTimeout(1_200);
+  await page.screenshot({ path: 'artifacts/verify-level5-to-6/stage6-red-portal.png' });
+  const portal = await hooks(page, 'getState') as { portalOpen: boolean; portalPosition: number[] };
+  expect(portal.portalOpen).toBe(true);
+  expect(portal.portalPosition).toEqual([0, 2.2, -139]);
+  await hooks(page, 'teleportPlayer', 0, 2.2, -139);
+  await page.waitForFunction(() => window.__THREE_GAME_DIAGNOSTICS__?.stage === 7, null, { timeout: 15_000 });
 });
 
 test('the Stage 10 campaign finale runs and shows the completion screen', async ({ page }) => {

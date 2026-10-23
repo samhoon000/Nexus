@@ -17,8 +17,11 @@ export class KeyboardMouseInput {
   private lockLostQueued = false;
   private lockWanted = false;
   private attackQueued = false;
+  private attackHeldFlag = false;
+  private gunQueued = false;
   private shieldHeldFlag = false;
   private rebootQueued = false;
+  private dodgeQueued = false;
   /** Keyboard camera rotation rate in rad/s. */
   readonly keyLookRate = 2.2;
 
@@ -32,9 +35,14 @@ export class KeyboardMouseInput {
       this.jumpQueued = true;
       this.jumpHeldFlag = true;
     }
-    if (event.code === 'KeyF') this.attackQueued = true;
+    if (event.code === 'KeyF') {
+      this.attackQueued = true;
+      this.attackHeldFlag = true;
+    }
+    if (event.code === 'KeyR') this.gunQueued = true;
     if (event.code === 'KeyE') this.rebootQueued = true;
     if (event.code === 'KeyQ') this.shieldHeldFlag = true;
+    if (event.code === 'ShiftLeft' || event.code === 'ShiftRight' || event.code === 'KeyC') this.dodgeQueued = true;
     if (event.code === 'Escape') this.pauseQueued = true;
     if (GAME_KEYS.has(event.code)) event.preventDefault();
   };
@@ -43,17 +51,23 @@ export class KeyboardMouseInput {
     this.keys.delete(event.code);
     if (event.code === 'Space') this.jumpHeldFlag = false;
     if (event.code === 'KeyQ') this.shieldHeldFlag = false;
+    if (event.code === 'KeyF') this.attackHeldFlag = false;
   };
 
   private readonly onBlur = (): void => {
     this.keys.clear();
     this.jumpHeldFlag = false;
     this.shieldHeldFlag = false;
+    this.attackHeldFlag = false;
   };
 
   private readonly onMouseDown = (event: MouseEvent): void => {
     if (event.button === 0) {
       this.attackQueued = true;
+      this.attackHeldFlag = true;
+    } else if (event.button === 1) {
+      this.gunQueued = true;
+      event.preventDefault();
     } else if (event.button === 2) {
       this.shieldHeldFlag = true;
       event.preventDefault();
@@ -61,7 +75,9 @@ export class KeyboardMouseInput {
   };
 
   private readonly onMouseUp = (event: MouseEvent): void => {
-    if (event.button === 2) {
+    if (event.button === 0) {
+      this.attackHeldFlag = false;
+    } else if (event.button === 2) {
       this.shieldHeldFlag = false;
     }
   };
@@ -101,16 +117,24 @@ export class KeyboardMouseInput {
     this.lockWanted = true;
     if (this.locked) return;
     try {
-      const result = this.canvas.requestPointerLock({ unadjustedMovement: true } as PointerLockOptions);
-      if (result && typeof (result as Promise<void>).catch === 'function') {
-        (result as Promise<void>).catch(() => this.canvas.requestPointerLock());
-      }
+      const result = this.canvas.requestPointerLock({ unadjustedMovement: true });
+      void result.catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'NotSupportedError') {
+          this.requestPointerLockFallback();
+        }
+      });
+    } catch (error) {
+      if (error instanceof TypeError) this.requestPointerLockFallback();
+    }
+  }
+
+  private requestPointerLockFallback(): void {
+    try {
+      void this.canvas.requestPointerLock().catch(() => {
+        // Pointer lock can require a fresh user gesture; keyboard look remains available.
+      });
     } catch {
-      try {
-        this.canvas.requestPointerLock();
-      } catch {
-        // Pointer lock unavailable (automation / permissions). Keyboard look still works.
-      }
+      // Pointer lock unavailable (automation / permissions). Keyboard look still works.
     }
   }
 
@@ -171,6 +195,11 @@ export class KeyboardMouseInput {
     return pressed;
   }
 
+  /** Attack held status for charged attacks (Left Click or F key held). */
+  get attackHeld(): boolean {
+    return this.attackHeldFlag;
+  }
+
   /** Shield held status (Right Click or Q key). */
   get shieldHeld(): boolean {
     return this.shieldHeldFlag;
@@ -183,9 +212,25 @@ export class KeyboardMouseInput {
     return pressed;
   }
 
+  /** Edge-triggered gun shoot press (R key or Middle Mouse Click). */
+  consumeGun(): boolean {
+    const pressed = this.gunQueued;
+    this.gunQueued = false;
+    return pressed;
+  }
+
+  /** Edge-triggered dodge press (Shift or C key). */
+  consumeDodge(): boolean {
+    const pressed = this.dodgeQueued;
+    this.dodgeQueued = false;
+    return pressed;
+  }
+
   clearTransient(): void {
     this.jumpQueued = false;
     this.attackQueued = false;
+    this.dodgeQueued = false;
+    this.gunQueued = false;
     this.rebootQueued = false;
     this.pauseQueued = false;
     this.lockLostQueued = false;
@@ -214,7 +259,11 @@ const GAME_KEYS = new Set([
   'KeyD',
   'KeyE',
   'KeyF',
+  'KeyR',
   'KeyQ',
+  'KeyC',
+  'ShiftLeft',
+  'ShiftRight',
   'ArrowUp',
   'ArrowDown',
   'ArrowLeft',

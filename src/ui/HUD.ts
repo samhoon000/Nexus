@@ -49,6 +49,7 @@ export class HUD {
       }),
       bus.on('teleport', () => this.showToast('RELOCATED')),
       bus.on('player:respawn', () => this.showToast('RESTORED AT CHECKPOINT')),
+      bus.on('toast', ({ text }) => this.showToast(text)),
     );
   }
 
@@ -62,7 +63,11 @@ export class HUD {
     this.root.style.opacity = '1';
     this.stageNumber.textContent = String(def.id);
     this.stageName.textContent = def.name;
-    this.objective.textContent = 'COLLECT ENERGY TO OPEN THE GATEWAY';
+    if (def.id === 6) {
+      this.objective.textContent = 'REACH THE FAR-END EXIT PORTAL';
+    } else {
+      this.objective.textContent = 'COLLECT ENERGY TO OPEN THE GATEWAY';
+    }
     this.objective.classList.remove('is-open');
     const hints = (this.touchMode ? def.touchHints : undefined) ?? def.hints ?? [];
     this.hints.replaceChildren(...hints.map((hint) => el('div', undefined, hint)));

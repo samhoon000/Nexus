@@ -49,66 +49,64 @@ export function createPlatform(def: PlatformDef, materials: MaterialLibrary): Pl
 
   const style = def.style ?? 'standard';
   const trimMaterial = trimMaterialFor(style, materials);
-
-  // Deck (top surface): slightly inset lighter slab.
-  const deck = new THREE.Mesh(SHARED_GEOMETRY.box, deckMaterialFor(style, materials));
-  deck.scale.set(w - 0.12, h * 0.42, d - 0.12);
-  deck.position.y = -h * 0.21;
-  deck.castShadow = true;
-  deck.receiveShadow = true;
-  group.add(deck);
-
-  // Shell (lower body)
-  const shell = new THREE.Mesh(SHARED_GEOMETRY.box, materials.shellDark);
-  shell.scale.set(w, h * 0.58, d);
-  shell.position.y = -h * 0.42 - h * 0.29;
-  shell.castShadow = true;
-  shell.receiveShadow = true;
-  group.add(shell);
-
-  // Emissive trim ring around the deck edge.
-  const trimThickness = Math.min(0.08, Math.min(w, d) * 0.08);
-  const trim = new THREE.Mesh(SHARED_GEOMETRY.edge, trimMaterial.clone());
-  trim.scale.set(w + 0.02, Math.min(0.08, h * 0.3), d + 0.02);
-  trim.position.y = -h * 0.42 - 0.02;
-  group.add(trim);
-
-  // Four corner clamps for a manufactured silhouette, merged into one draw call per platform.
+  let trim: THREE.Mesh | null = null;
   let clampGeometry: THREE.BufferGeometry | null = null;
-  if (w > 1.4 && d > 1.4) {
-    const clampSize = Math.min(0.35, Math.min(w, d) * 0.18);
-    const parts: THREE.BufferGeometry[] = [];
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        const part = new THREE.BoxGeometry(clampSize, h * 0.9, clampSize);
-        part.translate(sx * (w / 2 - clampSize / 2 + 0.02), -h * 0.45, sz * (d / 2 - clampSize / 2 + 0.02));
-        parts.push(part);
+
+  if (!def.colliderOnly) {
+    const deck = new THREE.Mesh(SHARED_GEOMETRY.box, deckMaterialFor(style, materials));
+    deck.scale.set(w - 0.12, h * 0.42, d - 0.12);
+    deck.position.y = -h * 0.21;
+    deck.castShadow = true;
+    deck.receiveShadow = true;
+    group.add(deck);
+
+    const shell = new THREE.Mesh(SHARED_GEOMETRY.box, materials.shellDark);
+    shell.scale.set(w, h * 0.58, d);
+    shell.position.y = -h * 0.42 - h * 0.29;
+    shell.castShadow = true;
+    shell.receiveShadow = true;
+    group.add(shell);
+
+    trim = new THREE.Mesh(SHARED_GEOMETRY.edge, trimMaterial.clone());
+    trim.scale.set(w + 0.02, Math.min(0.08, h * 0.3), d + 0.02);
+    trim.position.y = -h * 0.42 - 0.02;
+    group.add(trim);
+
+    if (w > 1.4 && d > 1.4) {
+      const clampSize = Math.min(0.35, Math.min(w, d) * 0.18);
+      const parts: THREE.BufferGeometry[] = [];
+      for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+          const part = new THREE.BoxGeometry(clampSize, h * 0.9, clampSize);
+          part.translate(
+            sx * (w / 2 - clampSize / 2 + 0.02),
+            -h * 0.45,
+            sz * (d / 2 - clampSize / 2 + 0.02),
+          );
+          parts.push(part);
+        }
+      }
+      clampGeometry = mergeGeometries(parts, false);
+      for (const part of parts) part.dispose();
+      if (clampGeometry) {
+        const clamps = new THREE.Mesh(clampGeometry, materials.trim);
+        clamps.castShadow = true;
+        group.add(clamps);
       }
     }
-    clampGeometry = mergeGeometries(parts, false);
-    for (const part of parts) part.dispose();
-    if (clampGeometry) {
-      const clamps = new THREE.Mesh(clampGeometry, materials.trim);
-      clamps.castShadow = true;
-      group.add(clamps);
+
+    if (h > 0.3) {
+      const conduit = new THREE.Mesh(SHARED_GEOMETRY.box, materials.emissiveDim);
+      conduit.scale.set(Math.max(0.2, w * 0.3), 0.08, Math.max(0.2, d * 0.3));
+      conduit.position.y = -h - 0.02;
+      group.add(conduit);
     }
   }
-
-  // Underside conduit (gives the platform a "powered" underside when viewed from below).
-  if (h > 0.3) {
-    const conduit = new THREE.Mesh(SHARED_GEOMETRY.box, materials.emissiveDim);
-    conduit.scale.set(Math.max(0.2, w * 0.3), 0.08, Math.max(0.2, d * 0.3));
-    conduit.position.y = -h - 0.02;
-    group.add(conduit);
-  }
-
-  void trimThickness;
 
   group.position.set(def.pos[0], def.pos[1], def.pos[2]);
   if (def.rot) group.rotation.set(degToRad(def.rot[0]), degToRad(def.rot[1]), degToRad(def.rot[2]));
   group.updateMatrixWorld(true);
 
-  // Collider: the OBB centre sits at the middle of the full slab, so wrap in a child pivot.
   const colliderPivot = new THREE.Object3D();
   colliderPivot.position.y = -h / 2;
   group.add(colliderPivot);
@@ -121,7 +119,7 @@ export function createPlatform(def: PlatformDef, materials: MaterialLibrary): Pl
     id: group.name,
     object: colliderPivot,
     obb,
-    enabled: !def.group,
+    enabled: !def.group && !def.visualOnly,
     kind: 'solid',
     prevMatrix: null,
     platform: null,
@@ -134,7 +132,7 @@ export function createPlatform(def: PlatformDef, materials: MaterialLibrary): Pl
     basePosition: group.position.clone(),
     baseQuaternion: group.quaternion.clone(),
     trim,
-    trimMaterialBase: trimMaterial,
+    trimMaterialBase: def.colliderOnly ? null : trimMaterial,
     ownedGeometry: clampGeometry,
     state: {},
   };

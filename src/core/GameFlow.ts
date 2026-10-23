@@ -3,11 +3,11 @@ import type { Game } from './Game';
 import type { StageDefinition } from '../stages/StageTypes';
 import { STAGE_COUNT } from '../utils/Constants';
 import { CoreSequence } from '../mechanics/CoreSequence';
-import { Stage6Opening, Stage6Victory } from '../mechanics/Stage6Sequence';
+import { Stage6Victory } from '../mechanics/Stage6Sequence';
 import { easeInOutCubic, easeOutCubic } from '../effects/Tween';
 import { ArmorSystem } from '../combat/ArmorSystem';
 import { EnergySword } from '../combat/EnergySword';
-import { formatTime } from '../utils/MathUtils';
+import { ArmoredGun } from '../combat/ArmoredGun';
 
 /**
  * High-level flow: menu ⇄ play, pause, death fade, stage complete → transition → next stage,
@@ -17,13 +17,13 @@ export class GameFlow {
   private fade = 0;
   private fadeTarget = 0;
   private core: CoreSequence | null = null;
-  private stage6Opening: Stage6Opening | null = null;
   private stage6Victory: Stage6Victory | null = null;
 
   private pendingStage = 0;
   private transitionTimer = 0;
   private completeTimer = 0;
   private deathFadeTimer = 0;
+  private briefingTimer = 0;
   private wasDying = false;
 
   constructor(private readonly game: Game) {
@@ -37,12 +37,21 @@ export class GameFlow {
     });
 
     game.bus.on('combat:campaign:complete', () => {
-      this.onCampaignVictory();
+      game.bus.emit('stage:portal:unlock', { stage: 10 });
     });
 
     game.bus.on('stage6:victory', () => {
       if (this.game.stages.stageIndex === 10) {
         this.onCampaignVictory();
+      }
+    });
+
+    game.bus.on('stage:loaded', ({ stage }) => {
+      if (stage !== 5) hideLevel5Completion();
+      if (stage !== 6) {
+        window.clearTimeout(this.briefingTimer);
+        this.briefingTimer = 0;
+        hideLevel6Warning();
       }
     });
   }
@@ -82,11 +91,12 @@ export class GameFlow {
   private cancelPending(): void {
     this.completeTimer = 0;
     this.transitionTimer = 0;
+    window.clearTimeout(this.briefingTimer);
+    this.briefingTimer = 0;
+    hideLevel6Warning();
     this.wasDying = false;
     this.core?.dispose();
     this.core = null;
-    this.stage6Opening?.dispose();
-    this.stage6Opening = null;
     this.stage6Victory?.dispose();
     this.stage6Victory = null;
   }
@@ -100,12 +110,12 @@ export class GameFlow {
     game.setScreenshotPause(false);
 
     if (instant) {
-      this.loadStage(stage);
       game.state.set(
         game.state.is('MENU', 'PAUSED', 'STAGE_COMPLETE', 'GAME_COMPLETE')
           ? 'TRANSITION'
           : game.state.name,
       );
+      this.loadStage(stage, instant);
       if (stage < 6) {
         game.state.set('PLAYING');
         this.fade = 0;
@@ -124,9 +134,10 @@ export class GameFlow {
     this.transitionTimer = 0.55;
   }
 
-  private loadStage(stage: number): void {
+  private loadStage(stage: number, instant = false): void {
     const game = this.game;
     game.stages.load(stage);
+    game.combat?.resetForStage(stage);
     const def = game.stages.current!;
     game.environment.applyTheme(def.theme, false);
     game.environment.setPower(stage === 5 ? 0 : 0.4);
@@ -138,9 +149,15 @@ export class GameFlow {
       game.combatHud.hide();
 
       if (stage === 6) {
-        // Launch Level 6 opening cinematic
-        this.stage6Opening = new Stage6Opening(game, () => this.onStageCombatReady(stage));
-        this.stage6Opening.start();
+        // Stage 6 remains out of gameplay until its controls guide is continued.
+        if (instant) {
+          this.showStage6Controls(stage);
+        } else {
+          this.briefingTimer = showLevel6Warning(() => {
+            this.briefingTimer = 0;
+            this.showStage6Controls(stage);
+          });
+        }
       } else {
         // Stages 7-10: initialize combat mission directly
         const center = new THREE.Vector3(0, 0, 0);
@@ -152,6 +169,15 @@ export class GameFlow {
     }
   }
 
+  private showStage6Controls(stage: number): void {
+    const game = this.game;
+    game.ui.showControlsOverlay(() => {
+      game.ui.showHud(game.stages.current!);
+      game.combat?.initStage6PlatformMission();
+      this.onStageCombatReady(stage);
+    });
+  }
+
   private ensureCyanKnightEquipped(): void {
     const game = this.game;
     if (!game.combat?.awakened) {
@@ -159,9 +185,12 @@ export class GameFlow {
       if (rig) {
         const armor = new ArmorSystem(rig);
         const sword = new EnergySword(rig);
+        const gun = new ArmoredGun(rig);
         armor.snapVisible();
         sword.snapVisible();
+        // Gun is hidden until Stage 8 (setGun handles this)
         game.combat?.setAwakened(armor, sword);
+        game.combat?.setGun(gun);
       }
     } else {
       game.combat.armor?.snapVisible();
@@ -183,18 +212,8 @@ export class GameFlow {
     game.audio.startMusic();
   }
 
-  private onCombatStageVictory(stage: number, nextStage: number): void {
-    const game = this.game;
-    game.stages.bankStage();
-    game.save.recordStageComplete(stage, game.stages.stats.stageTime);
-
-    const timeStr = formatTime(game.stages.stats.stageTime);
-    const comps = game.combat?.companionCount ?? 0;
-    const statsText = `MISSION TIME: ${timeStr} · LEGION COMPANIONS ACTIVE: ${comps} / 4`;
-
-    game.combatHud.showVictoryModal(stage, nextStage, statsText, () => {
-      this.startRun(nextStage);
-    });
+  private onCombatStageVictory(stage: number, _nextStage: number): void {
+    this.game.bus.emit('stage:portal:unlock', { stage });
   }
 
   private onCampaignVictory(): void {
@@ -223,6 +242,7 @@ export class GameFlow {
     const game = this.game;
     if (!game.state.is('PAUSED')) return;
     game.state.set('PLAYING');
+    game.ui.hidePause();
 
     if (game.stages.stageIndex >= 6) {
       game.combatHud.show();
@@ -247,6 +267,10 @@ export class GameFlow {
     if (!game.state.is('PLAYING')) return;
     game.state.set('STAGE_COMPLETE');
     game.input.releaseLock();
+    if (def.id === 10) {
+      this.onCampaignVictory();
+      return;
+    }
     game.stages.bankStage();
     game.save.recordStageComplete(def.id, game.stages.stats.stageTime);
 
@@ -264,6 +288,7 @@ export class GameFlow {
       game.stages.instance?.energy.count ?? 0,
       game.stages.instance?.energy.total ?? 0,
     );
+    if (def.id === 5) showLevel5Completion();
 
     game.cameraController.distanceScale = 1;
     game.tweens.tween(
@@ -280,15 +305,14 @@ export class GameFlow {
     this.pendingStage = Math.min(STAGE_COUNT, def.id + 1);
   }
 
-  finale(def: StageDefinition): void {
+  finale(_def: StageDefinition): void {
     const game = this.game;
     if (!game.state.is('PLAYING')) return;
     game.state.set('STAGE_COMPLETE');
     game.input.releaseLock();
-    game.stages.bankStage();
-    game.save.recordStageComplete(def.id, game.stages.stats.stageTime);
     game.ui.hideAll();
     this.cancelPending();
+    game.stages.beginFinaleSequence();
 
     // Start Stage 5 full 9-step Awakening cinematic
     this.core = new CoreSequence(game, () => this.onAwakeningComplete());
@@ -301,7 +325,7 @@ export class GameFlow {
    *   NEXUS PROTOCOL AWAKENED
    *   NEW MISSION: THE FALLEN LEGION
    *   "The Core has awakened an army buried beneath the battlefield. Prepare for combat."
-   * And unlocks and deploys the hero directly into Level 6!
+  * Then records Stage 5 complete and reveals its exit portal.
    */
   private onAwakeningComplete(): void {
     const game = this.game;
@@ -311,13 +335,11 @@ export class GameFlow {
     game.cameraController.cinematicPosition = null;
     game.cameraController.distanceScale = 1;
 
-    // Save Stage 5 completion and unlock Stage 6 in progression
-    game.save.recordStageComplete(5, game.stages.stats.stageTime);
-
-    // Show story transition modal
-    showStoryTransition(() => {
-      this.startRun(6);
-    });
+    if (!game.stages.completeFinale()) return;
+    document.getElementById('nexus-cinematic-caption')?.remove();
+    game.state.set('PLAYING');
+    game.ui.showHud(game.stages.current!);
+    game.input.requestLock();
   }
 
   private gameComplete(): void {
@@ -362,6 +384,7 @@ export class GameFlow {
     if (game.state.is('TRANSITION') && this.transitionTimer > 0) {
       this.transitionTimer -= delta;
       if (this.transitionTimer <= 0) {
+        this.transitionTimer = 0;
         this.loadStage(this.pendingStage);
         if (this.pendingStage < 6) {
           game.ui.showHud(game.stages.current!);
@@ -392,7 +415,6 @@ export class GameFlow {
     }
 
     this.core?.update(delta);
-    this.stage6Opening?.update(delta);
     this.stage6Victory?.update(delta);
   }
 
@@ -401,58 +423,54 @@ export class GameFlow {
   }
 }
 
-/**
- * Story transition modal displayed after Stage 5 awakening completes.
- */
-function showStoryTransition(onContinue: () => void): void {
-  let modal = document.getElementById('nexus-story-transition');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'nexus-story-transition';
-    modal.style.cssText = [
-      'position:fixed', 'inset:0', 'background:rgba(2,4,10,0.94)',
-      'display:flex', 'flex-direction:column', 'justify-content:center', 'align-items:center',
-      'z-index:1000', 'font-family:Orbitron,Segoe UI,sans-serif',
-      'text-align:center', 'padding:24px', 'backdrop-filter:blur(10px)',
-      'transition:opacity 0.6s',
-    ].join(';');
-    document.body.appendChild(modal);
+function showLevel6Warning(onContinue: () => void): number {
+  let warning = document.getElementById('nexus-stage6-warning');
+  if (!warning) {
+    warning = document.createElement('div');
+    warning.id = 'nexus-stage6-warning';
+    warning.setAttribute('role', 'alert');
+    warning.textContent = 'ROBOTS ARE NEARBY, BE AWARE';
+    document.body.appendChild(warning);
   }
+  warning.style.display = 'block';
+  requestAnimationFrame(() => warning?.classList.add('visible'));
+  return window.setTimeout(() => {
+    warning?.classList.remove('visible');
+    window.setTimeout(() => {
+      if (warning) warning.style.display = 'none';
+      onContinue();
+    }, 300);
+  }, 1800);
+}
 
-  modal.innerHTML = `
-    <div style="color:#00f0ff;font-size:clamp(13px,2.2vw,20px);letter-spacing:0.35em;font-weight:bold;margin-bottom:12px;text-shadow:0 0 16px rgba(0,240,255,0.7);">
-      NEXUS PROTOCOL AWAKENED
-    </div>
-    <div style="color:#ffffff;font-size:clamp(22px,4.5vw,38px);letter-spacing:0.4em;font-weight:900;margin-bottom:16px;text-shadow:0 0 24px rgba(255,34,0,0.6);">
-      NEW MISSION: THE FALLEN LEGION
-    </div>
-    <div style="color:rgba(210,235,255,0.85);font-size:clamp(12px,1.8vw,16px);letter-spacing:0.18em;max-width:650px;margin-bottom:34px;line-height:1.6;font-style:italic;">
-      "The Core has awakened an army buried beneath the battlefield. Prepare for combat."
-    </div>
-    <button id="btn-deploy-legion" style="
-      background:linear-gradient(90deg,#00f0ff,#3c7bff);color:#050914;font-family:Orbitron,sans-serif;
-      font-size:clamp(12px,1.6vw,15px);font-weight:900;letter-spacing:0.25em;padding:14px 38px;
-      border:none;border-radius:3px;cursor:pointer;box-shadow:0 0 24px rgba(0,240,255,0.7);
-      transition:transform 0.15s,box-shadow 0.15s;
-    ">DEPLOY TO BATTLEFIELD</button>
-  `;
-  modal.style.opacity = '1';
-  modal.style.display = 'flex';
+function hideLevel6Warning(): void {
+  const warning = document.getElementById('nexus-stage6-warning');
+  if (!warning) return;
+  warning.classList.remove('visible');
+  warning.style.display = 'none';
+}
 
-  let called = false;
-  const proceed = (): void => {
-    if (called) return;
-    called = true;
-    modal!.style.opacity = '0';
-    setTimeout(() => {
-      if (modal) modal.style.display = 'none';
-    }, 600);
-    onContinue();
-  };
+function showLevel5Completion(): void {
+  let notice = document.getElementById('nexus-stage5-completion');
+  if (!notice) {
+    notice = document.createElement('section');
+    notice.id = 'nexus-stage5-completion';
+    notice.setAttribute('role', 'status');
+    notice.setAttribute('aria-live', 'polite');
+    notice.innerHTML = `
+      <h2>LEVEL 5 COMPLETED</h2>
+      <div class="stage5-bonded">ARMOR IS BONDED</div>
+    `;
+    document.body.appendChild(notice);
+  }
+  notice.style.display = 'block';
+  requestAnimationFrame(() => notice?.classList.add('visible'));
+}
 
-  const btn = document.getElementById('btn-deploy-legion');
-  btn?.addEventListener('click', proceed, { once: true });
-
-  // Auto deploy after 4.5 seconds if untouched
-  setTimeout(proceed, 4500);
+function hideLevel5Completion(): void {
+  const notice = document.getElementById('nexus-stage5-completion');
+  if (!notice) return;
+  notice.classList.remove('visible');
+  notice.style.display = 'none';
+  notice.remove();
 }

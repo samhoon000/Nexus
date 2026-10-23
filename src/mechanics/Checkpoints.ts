@@ -1,17 +1,27 @@
 import * as THREE from 'three';
-import type { CheckpointDef } from '../stages/StageTypes';
+import type { CheckpointDef, StageProgressSnapshot } from '../stages/StageTypes';
 import type { StageContext } from '../stages/StageContext';
 import { MECHANICS } from '../utils/Constants';
 import { easeOutBack } from '../effects/Tween';
 
 interface Checkpoint {
+  id: string;
   position: THREE.Vector3;
+  facing: THREE.Vector3 | null;
   group: THREE.Group;
   ring: THREE.Mesh;
   pillar: THREE.Mesh;
   beam: THREE.Mesh;
   material: THREE.MeshStandardMaterial;
   beamMaterial: THREE.MeshBasicMaterial;
+}
+
+export interface ActiveCheckpoint {
+  id: string | null;
+  index: number;
+  position: THREE.Vector3;
+  facing: THREE.Vector3;
+  progress: StageProgressSnapshot | null;
 }
 
 /**
@@ -29,6 +39,8 @@ export class Checkpoints {
   activeIndex = -1;
   readonly spawnPoint = new THREE.Vector3();
   readonly spawnFacing = new THREE.Vector3(0, 0, 1);
+  private activeId: string | null = null;
+  private activeProgress: StageProgressSnapshot | null = null;
   private readonly scratch = new THREE.Vector3();
 
   constructor(private readonly ctx: StageContext, defs: CheckpointDef[] = [], spawn: THREE.Vector3, spawnFacing: THREE.Vector3) {
@@ -73,27 +85,40 @@ export class Checkpoints {
     group.add(base, ring, pillar, lamp, beam);
     group.position.set(def.pos[0], def.pos[1], def.pos[2]);
     this.group.add(group);
-    this.pads.push({ position: group.position.clone(), group, ring, pillar, beam, material, beamMaterial });
+    const facing = def.facing ? new THREE.Vector3(...def.facing) : null;
+    if (facing) {
+      facing.y = 0;
+      if (facing.lengthSq() < 0.01) facing.set(0, 0, 1);
+      facing.normalize();
+    }
+    this.pads.push({ id: def.id ?? `checkpoint-${this.pads.length + 1}`, position: group.position.clone(), facing, group, ring, pillar, beam, material, beamMaterial });
   }
 
-  check(playerCenter: THREE.Vector3): void {
+  check(playerCenter: THREE.Vector3, playerFacing: THREE.Vector3): void {
     for (let i = 0; i < this.pads.length; i += 1) {
       if (i <= this.activeIndex) continue;
       const pad = this.pads[i];
       // 3D distance so pads work under any gravity direction.
       if (playerCenter.distanceToSquared(pad.position) > MECHANICS.CHECKPOINT_RADIUS * MECHANICS.CHECKPOINT_RADIUS) continue;
-      this.activate(i, playerCenter);
+      this.activate(i, playerFacing);
     }
   }
 
-  private activate(index: number, playerCenter: THREE.Vector3): void {
+  private activate(index: number, playerFacing: THREE.Vector3): void {
     const pad = this.pads[index];
     this.activeIndex = index;
+    this.activeId = pad.id;
     this.spawnPoint.copy(pad.position);
-    // Face the direction of travel: from where the player came, through the pad centre.
-    this.spawnFacing.set(pad.position.x - playerCenter.x, 0, pad.position.z - playerCenter.z);
+    this.spawnFacing.copy(pad.facing ?? playerFacing);
+    this.spawnFacing.y = 0;
     if (this.spawnFacing.lengthSq() < 0.01) this.spawnFacing.set(0, 0, -1);
     this.spawnFacing.normalize();
+    const progress = this.ctx.getProgressSnapshot?.() ?? null;
+    this.activeProgress = progress ? {
+      ...progress,
+      completedSections: [...progress.completedSections],
+      spawnedSections: [...progress.spawnedSections],
+    } : null;
     pad.material.emissiveIntensity = 2.4;
     this.ctx.tweens.tween(0.5, (t) => {
       pad.ring.scale.setScalar(1 + 0.5 * (1 - t));
@@ -111,7 +136,27 @@ export class Checkpoints {
       size: 0.18,
       gravity: -2,
     });
-    this.ctx.bus.emit('checkpoint:activated', { index, position: pad.position });
+    this.ctx.bus.emit('checkpoint:activated', {
+      id: pad.id,
+      index,
+      position: pad.position.clone(),
+      facing: this.spawnFacing.clone(),
+      progress: this.activeProgress,
+    });
+  }
+
+  get activeCheckpoint(): ActiveCheckpoint {
+    return {
+      id: this.activeId,
+      index: this.activeIndex,
+      position: this.spawnPoint.clone(),
+      facing: this.spawnFacing.clone(),
+      progress: this.activeProgress ? {
+        ...this.activeProgress,
+        completedSections: [...this.activeProgress.completedSections],
+        spawnedSections: [...this.activeProgress.spawnedSections],
+      } : null,
+    };
   }
 
   update(elapsed: number): void {

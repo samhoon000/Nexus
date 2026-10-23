@@ -23,6 +23,13 @@ export function installTestHooks(game: Game): void {
     setBotIntent: (x: number, z: number, jump: boolean, hold?: boolean) => game.setBotIntent(x, z, jump, hold),
     getPlatforms: () => game.getPlatformSnapshot(),
     setInputMode: (mode: 'pointer' | 'touch') => game.setInputMode(mode),
+    defeatHostiles: () => {
+      game.combat?.defeatHostiles();
+    },
+    damagePlayer: (amount: number) => game.combat?.damagePlayerForTest(amount),
+    hostileAttackPlayer: () => game.combat?.hostileAttackPlayerForTest(),
+    damageRobot: (robotId: string, amount: number) => game.combat?.damageRobotForTest(robotId, amount),
+    spawnHostile: (x: number, y: number, z: number, id: string) => game.combat?.spawnHostileForTest(x, y, z, id),
   };
 }
 

@@ -116,5 +116,5 @@ export const STAGE_10: StageDefinition = {
     { kind: 'cubeCluster', pos: [-28, 22, 28], scale: 2.8 },
     { kind: 'cubeCluster', pos: [28, 22, 28], scale: 2.8 },
   ],
-  portal: { pos: [0, 0, -38], yaw: 180 },
+  portal: { pos: [0, 0, 40], yaw: 180 },
 };

@@ -11,6 +11,7 @@ export interface Projectile {
   maxLife: number;
   radius: number;
   color: number;
+  faction: 'enemy' | 'player';
 }
 
 export class ProjectileManager {
@@ -53,8 +54,9 @@ export class ProjectileManager {
     color = 0xff2200,
     radius = 0.25,
     maxLife = 4.0,
+    faction: 'enemy' | 'player' = 'enemy',
   ): void {
-    if (this.projectiles.length > 36) {
+    if (this.projectiles.length > 48) {
       // Recycle oldest
       const old = this.projectiles.shift();
       if (old) {
@@ -77,17 +79,18 @@ export class ProjectileManager {
       maxLife,
       radius,
       color,
+      faction,
     });
 
     // Muzzle flash particles
     this.particles.burst({
       position: origin.clone(),
-      count: 8,
+      count: faction === 'player' ? 12 : 8,
       color,
-      speed: 3,
-      spread: 0.6,
-      life: 0.2,
-      size: 0.12,
+      speed: 3.5,
+      spread: 0.7,
+      life: 0.22,
+      size: 0.14,
     });
   }
 
@@ -97,6 +100,7 @@ export class ProjectileManager {
     playerFacing: THREE.Vector3,
     isPlayerShielding: boolean,
     onPlayerHit: (damage: number) => void,
+    onHostileHit?: (pos: THREE.Vector3, damage: number) => boolean,
   ): void {
     const alive: Projectile[] = [];
 
@@ -105,27 +109,39 @@ export class ProjectileManager {
       proj.mesh.position.addScaledVector(proj.velocity, delta);
 
       // Trailing sparks occasionally
-      if (Math.random() < 0.25) {
+      if (Math.random() < 0.28) {
         this.particles.burst({
           position: proj.mesh.position.clone(),
           count: 2,
           color: proj.color,
-          speed: 1,
-          spread: 0.2,
+          speed: 1.2,
+          spread: 0.25,
           life: 0.2,
           size: 0.1,
         });
       }
 
-      // Check collision with ground or limits
-      if (proj.mesh.position.y <= 0.15 || proj.life >= proj.maxLife) {
+      // Check collision with ground or lifetime expiry
+      if (proj.mesh.position.y <= -20 || proj.life >= proj.maxLife) {
         this.burstImpact(proj.mesh.position, proj.color, 8);
         this.scene.remove(proj.mesh);
         continue;
       }
 
-      // Collision with player
       this._projPos.copy(proj.mesh.position);
+
+      // Player projectiles: check collision with hostile enemies
+      if (proj.faction === 'player') {
+        if (onHostileHit && onHostileHit(this._projPos, proj.damage)) {
+          this.burstImpact(this._projPos, 0x00f0ff, 20);
+          this.scene.remove(proj.mesh);
+          continue;
+        }
+        alive.push(proj);
+        continue;
+      }
+
+      // Enemy projectiles: check collision with player
       const distToPlayer = this._projPos.distanceTo(playerPos.clone().add(new THREE.Vector3(0, 1.0, 0)));
 
       if (distToPlayer < 1.1 + proj.radius) {
@@ -138,7 +154,7 @@ export class ProjectileManager {
         if (isPlayerShielding && facingDot > 0.15) {
           // SHIELD DEFLECTS / BLOCKS PROJECTILE
           this.bus.emit('combat:blocked', undefined);
-          this.burstImpact(this._projPos, 0x00f0ff, 22);
+          this.burstImpact(this._projPos, 0x00f0ff, 24);
         } else {
           // PLAYER TAKES HIT
           this.burstImpact(this._projPos, 0xff2200, 18);

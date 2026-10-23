@@ -124,6 +124,11 @@ export class InputManager {
     return this.keyboard.consumeAttack();
   }
 
+  /** ATTACK HELD: held state from mouse/keyboard for power attack charging. */
+  get isAttackHeld(): boolean {
+    return this.keyboard.attackHeld;
+  }
+
   /** SHIELD: held state from mouse/keyboard. */
   get isShieldHeld(): boolean {
     return this.keyboard.shieldHeld;
@@ -132,6 +137,16 @@ export class InputManager {
   /** REBOOT: edge-triggered press from keyboard. */
   consumeReboot(): boolean {
     return this.keyboard.consumeReboot();
+  }
+
+  /** GUN: edge-triggered press from keyboard/mouse. */
+  consumeGun(): boolean {
+    return this.keyboard.consumeGun();
+  }
+
+  /** DODGE: edge-triggered press from keyboard (Shift or C key). */
+  consumeDodge(): boolean {
+    return this.keyboard.consumeDodge();
   }
 
   isDown(code: string): boolean {

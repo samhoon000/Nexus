@@ -5,7 +5,10 @@ import { buildStage, type StageInstance } from './StageBuilder';
 import type { Player } from '../player/Player';
 import type { MoveIntent } from '../player/PlayerController';
 import type { CameraController } from '../camera/CameraController';
+import { createPlatform, type Platform } from '../world/Platforms';
+import type { TweenHandle } from '../effects/Tween';
 import { PLAYER, PLAYER_CENTER_HEIGHT } from '../utils/Constants';
+import type { PlayerDeathCause } from '../core/EventBus';
 import { STAGE_1 } from './Stage1';
 import { STAGE_2 } from './Stage2';
 import { STAGE_3 } from './Stage3';
@@ -58,13 +61,126 @@ export class StageManager {
   private readonly forward = new THREE.Vector3();
   private readonly right = new THREE.Vector3();
   private completed = false;
+  private portalEntryArmed = true;
+  private finaleStarted = false;
+  private finaleComplete = false;
+  private finaleRiseStarted = false;
+  private readonly finaleRiseTweens: TweenHandle[] = [];
+  private deathCause: Exclude<PlayerDeathCause, 'manual'> | null = null;
+  lastDeathCause: Exclude<PlayerDeathCause, 'manual'> | null = null;
 
   constructor(
     private readonly ctx: StageContext,
     private readonly player: Player,
     private readonly camera: CameraController,
     private readonly callbacks: StageManagerCallbacks,
-  ) {}
+  ) {
+    this.ctx.bus.on('stage:portal:unlock', ({ stage }) => {
+      this.materializeCompletionPortal(stage);
+    });
+  }
+
+  materializeCompletionPortal(stageId: number): void {
+    const stage = this.instance;
+    if (!stage || stage.def.id !== stageId || stage.portal.isOpen) return;
+    stage.portal.group.visible = true;
+    stage.portal.setOpen(true);
+    const pos = stage.portal.position.clone();
+    pos.y += 2.9;
+    this.ctx.particles.burst({
+      position: pos,
+      count: 120,
+      color: 0x00f0ff,
+      speed: 7.0,
+      spread: 3.0,
+      life: 1.8,
+      size: 0.25,
+    });
+    this.camera.punchFov(4);
+    this.camera.addTrauma(0.3);
+  }
+
+  beginFinaleSequence(): void {
+    const stage = this.instance;
+    if (!stage || stage.def.id !== 5) return;
+    this.finaleStarted = true;
+    stage.portal.setOpen(false);
+    stage.portal.group.visible = false;
+  }
+
+  completeFinale(): boolean {
+    const stage = this.instance;
+    if (!stage || stage.def.id !== 5 || this.finaleComplete) return false;
+    stage.portal.group.visible = true;
+    stage.portal.setOpen(false);
+    this.completed = false;
+    this.finaleStarted = true;
+    this.finaleComplete = true;
+    this.portalEntryArmed = false;
+    this.materializeCompletionPortal(5);
+    this.raiseFinaleExitPlatforms();
+    return true;
+  }
+
+  private raiseFinaleExitPlatforms(): void {
+    const stage = this.instance;
+    if (!stage || stage.def.id !== 5 || this.finaleRiseStarted) return;
+    this.finaleRiseStarted = true;
+
+    const position: [number, number, number] = [20, 17, -122.5];
+    const platform = createPlatform({
+      id: 'stage5-exit-rise',
+      pos: position,
+      size: [3.2, 0.6, 2.8],
+      style: 'core',
+      colliderOnly: true,
+    }, this.ctx.materials);
+    this.addFinaleExitVisual(platform);
+    platform.group.position.y -= 4.5;
+    platform.collider.enabled = false;
+    this.ctx.world.addPlatform(platform);
+    stage.platforms.push(platform);
+    this.ctx.world.refreshCollider(platform.collider);
+
+    const startY = platform.group.position.y;
+    this.finaleRiseTweens.push(this.ctx.tweens.tween(
+      1.5,
+      (t) => {
+        platform.group.position.y = startY + (position[1] - startY) * t;
+        this.ctx.world.refreshCollider(platform.collider);
+      },
+      undefined,
+      () => {
+        if (this.instance !== stage) return;
+        platform.group.position.y = position[1];
+        this.ctx.world.refreshCollider(platform.collider);
+        platform.collider.enabled = true;
+      },
+    ));
+  }
+
+  private addFinaleExitVisual(platform: Platform): void {
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    platform.ownedGeometry = geometry;
+    const addBox = (material: THREE.Material, pos: [number, number, number], size: [number, number, number]): void => {
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.set(...pos);
+      mesh.scale.set(...size);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      platform.group.add(mesh);
+    };
+
+    addBox(this.ctx.materials.shellDark, [0, -0.3, 0], [3.2, 0.6, 2.8]);
+    addBox(this.ctx.materials.shellMid, [0, -0.04, 0], [3, 0.08, 2.6]);
+    for (const x of [-1.42, 1.42]) {
+      for (const z of [-1.22, 1.22]) addBox(this.ctx.materials.shellMid, [x, -0.2, z], [0.24, 0.36, 0.24]);
+    }
+    addBox(this.ctx.materials.emissiveWhite, [0, -0.01, 1.34], [2.8, 0.05, 0.06]);
+    addBox(this.ctx.materials.emissiveWhite, [0, -0.01, -1.34], [2.8, 0.05, 0.06]);
+    addBox(this.ctx.materials.emissiveWhite, [1.54, -0.01, 0], [0.06, 0.05, 2.35]);
+    addBox(this.ctx.materials.emissiveWhite, [-1.54, -0.01, 0], [0.06, 0.05, 2.35]);
+  }
 
   get current(): StageDefinition | null {
     return this.instance?.def ?? null;
@@ -75,15 +191,29 @@ export class StageManager {
   }
 
   load(stageId: number): StageInstance {
+    this.cancelFinalePlatformRise();
     this.unload();
     const def = STAGES[Math.min(STAGES.length, Math.max(1, stageId)) - 1];
     this.ctx.theme = def.theme;
     this.instance = buildStage(def, this.ctx);
     this.stats.stageTime = 0;
     this.completed = false;
+    this.portalEntryArmed = true;
+    this.finaleStarted = false;
+    this.finaleComplete = false;
+    this.finaleRiseStarted = false;
     this.dying = false;
     this.deathTimer = 0;
+    if (def.id === 5) {
+      this.instance.portal.group.visible = false;
+      this.instance.portal.setOpen(false);
+    }
+    if (def.id > 6) {
+      this.instance.portal.group.visible = false;
+      this.instance.portal.isOpen = false;
+    }
     this.spawnAtStart();
+    if (def.id === 6) this.materializeCompletionPortal(6);
     this.ctx.bus.emit('stage:loaded', {
       stage: def.id,
       name: def.name,
@@ -95,9 +225,15 @@ export class StageManager {
   }
 
   unload(): void {
+    this.cancelFinalePlatformRise();
     if (!this.instance) return;
     this.instance.dispose();
     this.instance = null;
+  }
+
+  private cancelFinalePlatformRise(): void {
+    for (const tween of this.finaleRiseTweens) tween.cancel();
+    this.finaleRiseTweens.length = 0;
   }
 
   private spawnAtStart(): void {
@@ -173,16 +309,35 @@ export class StageManager {
       this.camera.addTrauma(0.2);
       this.camera.punchFov(6);
     }
-    stage.checkpoints.check(physics.position);
+    stage.checkpoints.check(physics.position, this.player.controller.facing);
     stage.energy.check(physics.position);
     this.player.energyRatio = stage.energy.total > 0 ? stage.energy.count / stage.energy.total : 0;
     this.stats.energy = this.collectedBeforeStage + stage.energy.count;
-    if (!stage.portal.isOpen && stage.energy.count >= stage.energy.required) stage.portal.setOpen(true);
+    if (stage.def.id < 5) {
+      if (!stage.portal.isOpen && stage.energy.count >= stage.energy.required) stage.portal.setOpen(true);
+    }
 
-    if (!this.completed && stage.portal.check(physics.position)) {
+    const activation = stage.def.finaleActivation;
+    if (stage.def.id === 5 && activation && !this.finaleStarted && !this.finaleComplete) {
+      const dx = physics.position.x - activation.pos[0];
+      const dy = physics.position.y - activation.pos[1];
+      const dz = physics.position.z - activation.pos[2];
+      if (dx * dx + dz * dz <= activation.radius * activation.radius && Math.abs(dy) <= 3.5) {
+        this.finaleStarted = true;
+        this.callbacks.onFinaleReached(stage.def);
+        return;
+      }
+    }
+
+    if (!this.portalEntryArmed && !stage.portal.check(physics.position)) this.portalEntryArmed = true;
+    if (!this.completed && this.portalEntryArmed && stage.portal.check(physics.position)) {
       this.completed = true;
-      if (stage.def.finale) this.callbacks.onFinaleReached(stage.def);
-      else this.callbacks.onStageComplete(stage.def);
+      if (stage.def.id === 5 && stage.def.finale) {
+        if (!this.finaleComplete) this.callbacks.onFinaleReached(stage.def);
+        else this.callbacks.onStageComplete(stage.def);
+      } else {
+        this.callbacks.onStageComplete(stage.def);
+      }
       return;
     }
 
@@ -205,9 +360,11 @@ export class StageManager {
     if (this.gravityPending > 0) this.gravityPending = Math.max(0, this.gravityPending - delta);
   }
 
-  die(cause: 'fall' | 'hazard'): void {
+  die(cause: Exclude<PlayerDeathCause, 'manual'>): void {
     if (this.dying || !this.instance) return;
     this.dying = true;
+    this.deathCause = cause;
+    this.lastDeathCause = cause;
     this.deathTimer = 0;
     this.stats.deaths += 1;
     this.camera.addTrauma(0.45);
@@ -215,18 +372,20 @@ export class StageManager {
     this.ctx.particles.burst({
       position: this.player.position,
       count: 50,
-      color: cause === 'hazard' ? 0xff7a2a : this.instance.def.theme.accent,
+      color: cause === 'hazard' ? 0xff7a2a : cause === 'combat' ? 0xff1100 : this.instance.def.theme.accent,
       speed: 5,
       life: 0.8,
       size: 0.2,
     });
   }
 
-  respawn(): void {
+  respawn(causeOverride?: PlayerDeathCause): void {
     const stage = this.instance;
     if (!stage) return;
+    const cause = causeOverride ?? this.deathCause ?? 'manual';
     this.dying = false;
     this.deathTimer = 0;
+    this.deathCause = null;
     stage.disappearing.reset();
     const spawn = stage.checkpoints.spawnPoint;
     const facing = stage.checkpoints.spawnFacing;
@@ -238,7 +397,12 @@ export class StageManager {
     }
     this.camera.reset();
     this.camera.snapBehind(facing, this.player.physics.up);
-    this.ctx.bus.emit('player:respawn', { position: this.player.position });
+    if (stage.def.id >= 7) this.ctx.bus.emit('combat:stage:restart', { stage: stage.def.id });
+    this.ctx.bus.emit('player:respawn', {
+      position: this.player.position.clone(),
+      cause,
+      checkpointId: stage.checkpoints.activeCheckpoint.id,
+    });
     this.ctx.particles.burst({ position: this.player.position, count: 30, color: stage.def.theme.accent, speed: 2.5, life: 0.7, size: 0.16 });
   }
 

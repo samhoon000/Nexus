@@ -243,6 +243,12 @@ export class EnergySword {
     this.swingTimer = 0;
   }
 
+  resetSwing(): void {
+    this.isSwinging = false;
+    this.swingTimer = 0;
+    this.group.rotation.set(Math.PI / 2.2, 0, -0.15);
+  }
+
   get inHitWindow(): boolean {
     return this.isSwinging && this.swingTimer >= 0.08 && this.swingTimer <= 0.38;
   }

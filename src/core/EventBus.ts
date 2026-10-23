@@ -1,19 +1,23 @@
 import type * as THREE from 'three';
 import type { GameStateName } from './GameState';
+import type { StageProgressSnapshot } from '../stages/StageTypes';
+
+export type PlayerDeathCause = 'combat' | 'fall' | 'hazard' | 'manual';
 
 /** Every cross-system event and its payload. Add new events here first. */
 export interface GameEvents {
   'state:changed': { from: GameStateName; to: GameStateName };
   'stage:loaded': { stage: number; name: string; energyRequired: number; energyTotal: number };
   'stage:complete': { stage: number; time: number; energy: number; energyTotal: number };
+  'stage:portal:unlock': { stage: number };
   'game:complete': { totalTime: number; energy: number; energyTotal: number; stages: number; deaths: number };
   'energy:collected': { position: THREE.Vector3; count: number; total: number };
   'energy:changed': { count: number; required: number; total: number };
-  'checkpoint:activated': { index: number; position: THREE.Vector3 };
+  'checkpoint:activated': { id: string; index: number; position: THREE.Vector3; facing: THREE.Vector3; progress: StageProgressSnapshot | null };
   'player:jump': { position: THREE.Vector3; double: boolean };
   'player:land': { position: THREE.Vector3; impact: number };
-  'player:died': { position: THREE.Vector3; cause: 'fall' | 'hazard' };
-  'player:respawn': { position: THREE.Vector3 };
+  'player:died': { position: THREE.Vector3; cause: Exclude<PlayerDeathCause, 'manual'> };
+  'player:respawn': { position: THREE.Vector3; cause: PlayerDeathCause; checkpointId: string | null };
   'teleport': { from: THREE.Vector3; to: THREE.Vector3 };
   'gravity:changed': { up: THREE.Vector3; scale: number; position: THREE.Vector3 };
   'platform:activated': { id: string; position: THREE.Vector3 };
@@ -27,12 +31,16 @@ export interface GameEvents {
   'ui:confirm': undefined;
   'ui:back': undefined;
   'shake': { amount: number };
+  'toast': { text: string };
   // ---- Awakening & Combat events ----
   'awakening:start': undefined;
   'awakening:armor': undefined;
   'awakening:sword': undefined;
   'awakening:complete': undefined;
-  'combat:attack': { position: THREE.Vector3; facing: THREE.Vector3 };
+  'combat:attack': { position: THREE.Vector3; facing: THREE.Vector3; charged?: boolean };
+  'combat:gun_fire': { position: THREE.Vector3; direction: THREE.Vector3 };
+  'combat:gun_unlocked': undefined;
+  'combat:stage:restart': { stage: number };
   'combat:shield:start': undefined;
   'combat:shield:end': undefined;
   'combat:hit': { robotId: string; damage: number };

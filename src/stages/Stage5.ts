@@ -64,8 +64,6 @@ export const STAGE_5: StageDefinition = {
     { pos: [26, 13, -99], size: [4, 1, 4] },
     { id: 'cp3', pos: [20, 15, -104], size: [5, 1, 5], style: 'light' },
     ...ringPlatforms,
-    // Core chamber.
-    { id: 'core-plaza', pos: [20, 17, -126], size: [16, 2, 14], style: 'core' },
   ],
   gravityZones: [{ pos: [-7.3, 10, -33], size: [9.4, 20, 20], up: [1, 0, 0], color: 0x19e6ff }],
   teleporters: [
@@ -88,6 +86,7 @@ export const STAGE_5: StageDefinition = {
     ...ringOrbs,
   ],
   checkpoints: [{ pos: [0, 6, -26] }, { pos: [-6, 1, -50] }, { pos: [20, 15, -104] }],
+  finaleActivation: { pos: [20, 16.5, -117], radius: 1.0 },
   decor: [
     { kind: 'core', pos: [20, 17, -140], scale: 1 },
     { kind: 'monolith', pos: [12, 17, -126], scale: 1.8 },

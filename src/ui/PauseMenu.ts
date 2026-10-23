@@ -4,6 +4,7 @@ interface PauseActions {
   resume(): void;
   restartCheckpoint(): void;
   openSettings(): void;
+  openControls?(): void;
   mainMenu(): void;
   hover(): void;
   confirm(): void;
@@ -15,6 +16,10 @@ export class PauseMenu {
 
   constructor(actions: PauseActions) {
     this.listen(query('#btn-resume'), 'click', () => actions.resume());
+    const ctrlBtn = document.getElementById('btn-pause-controls');
+    if (ctrlBtn && actions.openControls) {
+      this.listen(ctrlBtn, 'click', () => actions.openControls?.());
+    }
     this.listen(query('#btn-restart-checkpoint'), 'click', () => actions.restartCheckpoint());
     this.listen(query('#btn-pause-settings'), 'click', () => actions.openSettings());
     this.listen(query('#btn-pause-menu'), 'click', () => actions.mainMenu());

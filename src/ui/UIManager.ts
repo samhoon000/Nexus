@@ -12,6 +12,7 @@ import { SettingsPanel } from './SettingsPanel';
 import { StageCompleteScreen } from './StageComplete';
 import { GameCompleteScreen } from './GameComplete';
 import { MobileControls } from './MobileControls';
+import { ControlsOverlay } from './ControlsOverlay';
 import type { InputManager } from '../input/InputManager';
 
 export interface UIActions {
@@ -31,6 +32,7 @@ export class UIManager {
   readonly loading = new LoadingScreen();
   readonly hud: HUD;
   readonly mobile: MobileControls;
+  readonly controlsOverlay = new ControlsOverlay();
   private readonly menu: MainMenu;
   private readonly pause: PauseMenu;
   private readonly settings: SettingsPanel;
@@ -60,6 +62,7 @@ export class UIManager {
       resume: () => actions.resume(),
       restartCheckpoint: () => actions.restartCheckpoint(),
       openSettings: () => this.openSettings('pause'),
+      openControls: () => this.showControlsOverlay(),
       mainMenu: () => actions.mainMenu(),
       hover: () => bus.emit('ui:hover', undefined),
       confirm: () => bus.emit('ui:confirm', undefined),
@@ -97,8 +100,13 @@ export class UIManager {
     }
   }
 
+  showControlsOverlay(onDismiss?: () => void): void {
+    this.controlsOverlay.show(onDismiss);
+  }
+
   hideAll(): void {
     for (const screen of this.screens) setVisible(screen, false);
+    this.controlsOverlay.hide();
     this.hud.hide();
   }
 
@@ -117,6 +125,10 @@ export class UIManager {
     for (const screen of this.screens) setVisible(screen, false);
     this.hud.showDimmed();
     this.pause.show();
+  }
+
+  hidePause(): void {
+    this.pause.hide();
   }
 
   showStageComplete(def: StageDefinition, time: number, energy: number, total: number): void {

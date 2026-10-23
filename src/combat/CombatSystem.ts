@@ -4,7 +4,16 @@ import type { ParticleSystem } from '../effects/Particles';
 import { RobotEntity, type RobotType } from './RobotEntity';
 import type { ArmorSystem } from './ArmorSystem';
 import type { EnergySword } from './EnergySword';
+import { ArmoredGun } from './ArmoredGun';
 import { ProjectileManager } from './ProjectileManager';
+import {
+  STAGE_6_SECTION_1_SPAWNS,
+  STAGE_6_SECTION_2_SPAWNS,
+  STAGE_6_SECTION_3_SPAWNS,
+} from '../stages/Stage6';
+import type { StageProgressSnapshot } from '../stages/StageTypes';
+
+export type PlayerLifeState = 'ALIVE' | 'TAKING_DAMAGE' | 'DEAD' | 'RESPAWNING';
 
 export interface CombatSystemConfig {
   scene: THREE.Scene;
@@ -16,8 +25,12 @@ export interface CombatSystemConfig {
 
 export interface CombatInputs {
   attackPressed: boolean;
+  attackHeld?: boolean;
+  gunPressed?: boolean;
   shieldHeld: boolean;
   rebootPressed: boolean;
+  /** Shift / left-joystick double-tap: dodge roll */
+  dodgePressed?: boolean;
 }
 
 export const COMPANION_LIMIT = 4;
@@ -29,6 +42,12 @@ export interface WaveConfig {
   title: string;
   description: string;
   enemies: Array<{ type: RobotType; count: number }>;
+}
+
+interface Stage6Spawn {
+  id: string;
+  position: THREE.Vector3;
+  type: RobotType;
 }
 
 export class CombatSystem {
@@ -45,13 +64,46 @@ export class CombatSystem {
   // Player combat stats
   playerHealth = 100;
   readonly playerMaxHealth = 100;
+  playerLifeState: PlayerLifeState = 'ALIVE';
+  onPlayerDiedCallback: (() => void) | null = null;
   isShielding = false;
   private attackCooldown = 0;
   private readonly attackCooldownDuration = 0.48;
 
+  // ---- Combo system ----
+  /** Number of light-attack hits in current combo chain (resets on heavy or gap). */
+  private comboCount = 0;
+  /** Timer until combo resets if no follow-up attack (seconds). */
+  private comboResetTimer = 0;
+  private readonly COMBO_WINDOW = 0.85;       // seconds to chain next hit
+  private readonly LIGHT_DAMAGE = 28;         // per light strike
+  private readonly HEAVY_DAMAGE = 72;         // heavy finisher (3rd hit in chain)
+  private readonly HEAVY_COOLDOWN = 0.72;     // longer recovery for heavy
+
+  // ---- Per-swing hit tracking (prevents multi-tick damage during swing window) ----
+  private readonly hitThisSwing = new Set<string>();
+
+  // ---- Dodge roll ----
+  private dodgeCooldown = 0;
+  private readonly DODGE_COOLDOWN = 0.95;
+  private isDodging = false;
+  private dodgeTimer = 0;
+  private readonly DODGE_DURATION = 0.28;     // iframe window seconds
+
+  // ---- Skill energy ----
+  skillEnergy = 0;
+  readonly skillMaxEnergy = 100;
+  private readonly SKILL_ENERGY_PER_HIT = 8;
+  private readonly SKILL_ENERGY_PER_DODGE = 6;
+  private readonly SKILL_COST = 50;
+  private skillActive = false;
+  private skillTimer = 0;
+  private readonly SKILL_DURATION = 2.2;      // seconds of power strike mode
+
   // Equipment
   armor: ArmorSystem | null = null;
   sword: EnergySword | null = null;
+  gun: ArmoredGun | null = null;
   private _awakened = false;
 
   // Energy Shield mesh
@@ -76,6 +128,23 @@ export class CombatSystem {
   private maxActiveMeleeAttackers = 2;
   private maxActiveRangedAttackers = 1;
 
+  // Stage 6 section tracking (3 distinct sequential sections)
+  private stage6Section: 1 | 2 | 3 | 'complete' = 1;
+  private stage6Section1Done = false;
+  private stage6Section2Spawned = false;
+  private stage6Section2Done = false;
+  private stage6Section3Spawned = false;
+  private stage6Section3Done = false;
+  private stage6EncounterSpawns: Record<1 | 2 | 3, Stage6Spawn[]> = { 1: [], 2: [], 3: [] };
+
+  // Charged power attack system
+  private chargeTimer = 0;
+  private isCharging = false;
+  private attackTapQueued = false;
+  private readonly CHARGE_THRESHOLD = 0.45;
+  private readonly CHARGED_DAMAGE = 85;
+  private readonly CHARGED_COOLDOWN = 0.82;
+
   // Scratch
   private readonly _scratch = new THREE.Vector3();
   private readonly _tipScratch = new THREE.Vector3();
@@ -89,17 +158,17 @@ export class CombatSystem {
     this.playerGroup = config.playerGroup;
     this.projectiles = new ProjectileManager(this.scene, this.bus, this.particles);
 
-    // Build the visual Energy Shield barrier
+    // Build the visual Energy Shield barrier — refined, translucent holographic barrier
     this.shieldMaterial = new THREE.MeshStandardMaterial({
-      color: 0x002436,
-      emissive: 0x00f0ff,
-      emissiveIntensity: 2.8,
+      color: 0x041824,
+      emissive: 0x00cce6,
+      emissiveIntensity: 0.65,
       transparent: true,
-      opacity: 0.72,
-      roughness: 0.1,
-      metalness: 0.2,
+      opacity: 0.35,
+      roughness: 0.35,
+      metalness: 0.15,
       side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
+      blending: THREE.NormalBlending,
       depthWrite: false,
     });
 
@@ -108,14 +177,14 @@ export class CombatSystem {
     shieldMesh.rotation.y = Math.PI / 2;
     shieldMesh.position.set(0, 1.0, 0.7);
 
-    // Shield rim accent
+    // Shield rim accent — subtle edge glow
     const rimMat = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      emissive: 0x19e6ff,
-      emissiveIntensity: 4.0,
+      color: 0x00f0ff,
+      emissive: 0x00f0ff,
+      emissiveIntensity: 1.2,
       transparent: true,
-      opacity: 0.9,
-      blending: THREE.AdditiveBlending,
+      opacity: 0.65,
+      blending: THREE.NormalBlending,
     });
     const rimMesh = new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.025, 8, 24), rimMat);
     rimMesh.position.set(0, 1.0, 0.72);
@@ -123,30 +192,124 @@ export class CombatSystem {
     this.shieldGroup.add(shieldMesh, rimMesh);
     this.shieldGroup.visible = false;
     this.playerGroup.add(this.shieldGroup);
+
+    // Listen for player respawn to immediately restore full combat capabilities
+    this.bus.on('player:respawn', ({ cause }) => {
+      this.onPlayerRespawn(cause);
+    });
+  }
+
+  get comboHits(): number {
+    return this.comboCount;
+  }
+
+  onPlayerRespawn(cause: 'combat' | 'fall' | 'hazard' | 'manual' = 'manual'): void {
+    this.playerLifeState = 'ALIVE';
+    this.playerHealth = this.playerMaxHealth;
+    this.attackCooldown = 0;
+    this.dodgeCooldown = 0;
+    this.isDodging = false;
+    this.dodgeTimer = 0;
+    this.comboCount = 0;
+    this.comboResetTimer = 0;
+    this.attackTapQueued = false;
+    this.isCharging = false;
+    this.chargeTimer = 0;
+    this.hitThisSwing.clear();
+    this.isShielding = false;
+    this.shieldGroup.visible = false;
+    this.sword?.resetSwing();
+    this.projectiles.clear();
+    this.bus.emit('combat:damage_taken', { health: this.playerHealth });
+    if (this.currentStageId === 6 && cause === 'combat') this.restartActiveStage6Encounter();
+    else if (this.currentStageId >= 7 && !this.missionFinished) this.restartStageMission();
   }
 
   get awakened(): boolean {
     return this._awakened;
   }
 
-  setAwakened(armor: ArmorSystem, sword: EnergySword): void {
+  setAwakened(armor: ArmorSystem, sword: EnergySword, gun?: ArmoredGun): void {
     this._awakened = true;
     this.armor = armor;
     this.sword = sword;
+    if (gun) this.gun = gun;
+  }
+
+  /** Clears run-owned combat entities and configures equipment for the selected stage. */
+  resetForStage(stageId: number): void {
+    this.clearAllRobots();
+    this.projectiles.clear();
+    this.currentStageId = stageId;
+    this.currentWaveIndex = 0;
+    this.wavesForStage = [];
+    this.waveObjectiveTarget = 0;
+    this.waveObjectiveProgress = 0;
+    this.missionFinished = false;
+    this.inInterWave = false;
+    this.interWaveTimer = 0;
+    this.warlordBoss = null;
+    this.playerHealth = this.playerMaxHealth;
+    this.playerLifeState = 'ALIVE';
+    this.attackCooldown = 0;
+    this.comboCount = 0;
+    this.comboResetTimer = 0;
+    this.dodgeCooldown = 0;
+    this.isDodging = false;
+    this.dodgeTimer = 0;
+    this.skillEnergy = 0;
+    this.skillActive = false;
+    this.skillTimer = 0;
+    this.chargeTimer = 0;
+    this.isCharging = false;
+    this.attackTapQueued = false;
+    this.hitThisSwing.clear();
+    this.isShielding = false;
+    this.shieldGroup.visible = false;
+    this.sword?.resetSwing();
+
+    if (stageId <= 5) this.clearEquipment();
+    this.bus.emit('combat:damage_taken', { health: this.playerHealth });
+  }
+
+  private clearEquipment(): void {
+    this.armor?.dispose();
+    this.sword?.dispose();
+    this.gun?.dispose();
+    this.armor = null;
+    this.sword = null;
+    this.gun = null;
+    this._awakened = false;
+  }
+
+  setGun(gun: ArmoredGun): void {
+    this.gun = gun;
+    if (this.currentStageId >= 8) {
+      this.gun.snapVisible();
+    }
+  }
+
+  setPlayerDiedCallback(cb: () => void): void {
+    this.onPlayerDiedCallback = cb;
   }
 
   /** Backward-compatible helper for Stage 6 */
-  initStage6Mission(arenaCenter: THREE.Vector3): void {
-    this.initStageMission(6, arenaCenter);
+  initStage6Mission(_arenaCenter: THREE.Vector3): void {
+    this.initStage6PlatformMission();
   }
 
   /**
    * Initializes the mission and wave progression for Stages 6–10.
    */
   initStageMission(stageId: number, arenaCenter: THREE.Vector3): void {
+    if (stageId === 6) {
+      this.initStage6PlatformMission();
+      return;
+    }
     this.clearAllRobots();
     this.projectiles.clear();
     this.playerHealth = this.playerMaxHealth;
+    this.playerLifeState = 'ALIVE';
     this.currentStageId = stageId;
     this.arenaCenter.copy(arenaCenter);
     this.currentWaveIndex = 0;
@@ -160,6 +323,202 @@ export class CombatSystem {
 
     // Launch Wave 1
     this.startWave(0);
+  }
+
+  restartStageMission(): void {
+    if (this.currentStageId === 6) {
+      this.restartActiveStage6Encounter();
+    } else {
+      this.initStageMission(this.currentStageId, this.arenaCenter);
+    }
+    // Reset player life state on restart
+    this.playerLifeState = 'ALIVE';
+    this.attackCooldown = 0;
+    this.comboCount = 0;
+    this.comboResetTimer = 0;
+    this.isDodging = false;
+    this.dodgeTimer = 0;
+    this.dodgeCooldown = 0;
+    this.bus.emit('combat:damage_taken', { health: this.playerHealth });
+  }
+
+  getStage6ProgressSnapshot(): StageProgressSnapshot | null {
+    if (this.currentStageId !== 6) return null;
+    const completedSections = [
+      this.stage6Section1Done ? 1 : 0,
+      this.stage6Section2Done ? 2 : 0,
+      this.stage6Section3Done ? 3 : 0,
+    ].filter((section) => section > 0);
+    const spawnedSections = [1, this.stage6Section2Spawned ? 2 : 0, this.stage6Section3Spawned ? 3 : 0]
+      .filter((section) => section > 0);
+    return {
+      section: this.stage6Section === 'complete' ? 4 : this.stage6Section,
+      completedSections,
+      spawnedSections,
+      finished: this.missionFinished,
+    };
+  }
+
+  private spawnStage6Section(section: 1 | 2 | 3): void {
+    for (const spawn of this.stage6EncounterSpawns[section]) {
+      const existingHostile = this.robots.find((robot) => robot.id === spawn.id && robot.faction === 'hostile');
+      if (existingHostile) continue;
+      let id = spawn.id;
+      let attempt = 1;
+      while (this.robots.some((robot) => robot.id === id)) {
+        attempt += 1;
+        id = `${spawn.id}-attempt-${attempt}`;
+      }
+      this.spawnRobot(spawn.position, spawn.type, 'hostile', true, id);
+    }
+  }
+
+  private restartActiveStage6Encounter(): void {
+    if (this.currentStageId !== 6 || this.stage6Section === 'complete') return;
+    const section = this.stage6Section;
+    if ((section === 2 && !this.stage6Section2Spawned) || (section === 3 && !this.stage6Section3Spawned)) return;
+
+    const prefix = `stage6-section-${section}-robot-`;
+    const retained: RobotEntity[] = [];
+    for (const robot of this.robots) {
+      if (robot.id.startsWith(prefix) && robot.faction === 'hostile') robot.dispose();
+      else retained.push(robot);
+    }
+    this.robots = retained;
+    this.projectiles.clear();
+    this.spawnStage6Section(section);
+    this.currentWaveIndex = section - 1;
+    this.waveObjectiveProgress = 0;
+    this.waveObjectiveTarget = this.robots.filter((robot) => robot.id.startsWith(prefix) && robot.faction === 'hostile').length;
+    this.inInterWave = false;
+    this.interWaveTimer = 0;
+    this.bus.emit('combat:wave:start', {
+      stage: 6,
+      wave: section,
+      totalWaves: 3,
+      title: `HOSTILE UNITS DETECTED — SECTION ${section}/3`,
+    });
+    this.bus.emit('objective:updated', this.getObjectiveInfo());
+  }
+
+  damagePlayerForTest(amount: number): void {
+    this.onPlayerTakeDamage(amount);
+  }
+
+  hostileAttackPlayerForTest(): void {
+    const attacker = this.robots.find((robot) =>
+      robot.faction === 'hostile' && !robot.isDefeated && robot.state !== 'SPAWNING',
+    );
+    if (!attacker) throw new Error('No active hostile is available for the combat-death test.');
+    attacker.position.copy(this.getPlayerPos());
+    for (let hit = 0; hit < 10 && this.playerLifeState !== 'DEAD'; hit += 1) {
+      this.onRobotMeleeAttack(attacker, this.getPlayerPos());
+    }
+  }
+
+  damageRobotForTest(robotId: string, amount: number): void {
+    const robot = this.robots.find((candidate) => candidate.id === robotId);
+    if (!robot || robot.faction !== 'hostile') return;
+    if (robot.takeDamage(amount)) this.handleRobotDefeated(robot);
+  }
+
+  spawnHostileForTest(x: number, y: number, z: number, stableId: string): void {
+    if (this.robots.some((robot) => robot.id === stableId)) return;
+    this.spawnRobot(new THREE.Vector3(x, y, z), 'grunt', 'hostile', false, stableId);
+  }
+
+  /**
+   * Stage 6 scripted encounter: 3 sequential sections with futuristic nanotech materialization.
+   * Section 1: 2 hostile grunts at the arrival dais.
+   * Section 2: 2 hostile sentinels at the midlevel ledge.
+   * Section 3: 2 elite defenders at the Reactor Sanctum (unlocks the exit portal).
+   */
+  initStage6PlatformMission(): void {
+    this.clearAllRobots();
+    this.projectiles.clear();
+    this.playerHealth = this.playerMaxHealth;
+    this.playerLifeState = 'ALIVE';
+    this.currentStageId = 6;
+    this.arenaCenter.set(0, 0, 0);
+    this.currentWaveIndex = 0;
+    this.missionFinished = false;
+    this.inInterWave = false;
+    this.interWaveTimer = 0;
+    this.warlordBoss = null;
+    this.attackCooldown = 0;
+    this.comboCount = 0;
+    this.comboResetTimer = 0;
+    this.dodgeCooldown = 0;
+    this.isDodging = false;
+    this.dodgeTimer = 0;
+    this.hitThisSwing.clear();
+    this.isShielding = false;
+    this.shieldGroup.visible = false;
+    this.sword?.resetSwing();
+    this.skillEnergy = 0;
+    this.skillActive = false;
+    this.skillTimer = 0;
+    this.chargeTimer = 0;
+    this.isCharging = false;
+    this.attackTapQueued = false;
+
+    // Reset 3 sections state
+    this.stage6Section = 1;
+    this.stage6Section1Done = false;
+    this.stage6Section2Spawned = false;
+    this.stage6Section2Done = false;
+    this.stage6Section3Spawned = false;
+    this.stage6Section3Done = false;
+
+    this.wavesForStage = [
+      {
+        title: 'SECTION 1/3 — ARRIVAL SECTOR',
+        description: 'Neutralize the 2 hostile nano units guarding the arrival dais.',
+        enemies: [{ type: 'grunt', count: 2 }],
+      },
+      {
+        title: 'SECTION 2/3 — MIDLEVEL LEDGE',
+        description: 'Eliminate the 2 hostile nano units guarding the midlevel ledge.',
+        enemies: [{ type: 'grunt', count: 2 }],
+      },
+      {
+        title: 'FINAL SECTION — 3/3 — REACTOR SANCTUM',
+        description: 'Defeat the 2 elite defenders guarding the Reactor Sanctum.',
+        enemies: [
+          { type: 'heavy', count: 1 },
+          { type: 'elite-grunt', count: 1 },
+        ],
+      },
+    ];
+    this.waveObjectiveTarget = 2;
+    this.waveObjectiveProgress = 0;
+
+    this.stage6EncounterSpawns = {
+      1: STAGE_6_SECTION_1_SPAWNS.map((pos, index) => ({
+        id: `stage6-section-1-robot-${index + 1}`,
+        position: new THREE.Vector3(...pos),
+        type: 'grunt',
+      })),
+      2: STAGE_6_SECTION_2_SPAWNS.map((pos, index) => ({
+        id: `stage6-section-2-robot-${index + 1}`,
+        position: new THREE.Vector3(...pos),
+        type: 'grunt',
+      })),
+      3: STAGE_6_SECTION_3_SPAWNS.map((pos, index) => ({
+        id: `stage6-section-3-robot-${index + 1}`,
+        position: new THREE.Vector3(...pos),
+        type: index === 0 ? 'heavy' : 'elite-grunt',
+      })),
+    };
+    this.spawnStage6Section(1);
+
+    this.bus.emit('combat:wave:start', {
+      stage: 6,
+      wave: 1,
+      totalWaves: 3,
+      title: 'HOSTILE UNITS DETECTED — SECTION 1/3',
+    });
+    this.bus.emit('objective:updated', this.getObjectiveInfo());
   }
 
   private buildWavesForStage(stageId: number): WaveConfig[] {
@@ -553,6 +912,53 @@ export class CombatSystem {
   }
 
   getObjectiveInfo(): ObjectiveInfo {
+    if (this.currentStageId === 6) {
+      if (this.missionFinished || this.stage6Section === 'complete') {
+        return {
+          number: 3,
+          title: 'SECTOR SECURED — ALL 3 SECTIONS CLEARED',
+          description: 'All required hostile sections are defeated. The exit portal remains available.',
+          progress: 'OBJECTIVES COMPLETE',
+          completed: true,
+        };
+      }
+      if (this.stage6Section === 2 && !this.stage6Section2Spawned) {
+        return {
+          number: 2,
+          title: 'ADVANCE TO MIDLEVEL SECTOR (1 / 3 CLEARED)',
+          description: 'Cross the floating bridges toward the midlevel ledge.',
+          progress: 'OBJECTIVE: ADVANCE',
+          completed: false,
+        };
+      }
+      if (this.stage6Section === 3 && !this.stage6Section3Spawned) {
+        return {
+          number: 3,
+          title: 'ASCEND TO REACTOR SANCTUM (2 / 3 CLEARED)',
+          description: 'Cross the elevated conduits to reach the Reactor Sanctum.',
+          progress: 'OBJECTIVE: ADVANCE',
+          completed: false,
+        };
+      }
+      const sectionNum = this.stage6Section as number;
+      const sectionTitle =
+        sectionNum === 1
+          ? 'SECTION 1/3 — ARRIVAL SECTOR'
+          : sectionNum === 2
+          ? 'SECTION 2/3 — MIDLEVEL LEDGE'
+          : 'FINAL SECTION — 3/3 — REACTOR SANCTUM';
+      return {
+        number: sectionNum,
+        title: sectionTitle,
+        description:
+          sectionNum === 3
+            ? 'Defeat the 2 elite defenders guarding the Reactor Sanctum.'
+            : 'Neutralize the 2 hostile nano units in this sector.',
+        progress: `${this.waveObjectiveProgress} / ${this.waveObjectiveTarget || 2} NEUTRALIZED`,
+        completed: false,
+      };
+    }
+
     const wave = this.wavesForStage[this.currentWaveIndex];
     const waveNum = this.currentWaveIndex + 1;
     const totalWaves = this.wavesForStage.length;
@@ -593,14 +999,17 @@ export class CombatSystem {
     pos: THREE.Vector3,
     type: RobotType = 'grunt',
     faction: 'hostile' | 'companion' = 'hostile',
+    nanotechMaterialize = false,
+    stableId?: string,
   ): RobotEntity {
-    const id = `robot-${type}-${Date.now()}-${Math.random().toFixed(4)}`;
+    const id = stableId ?? `robot-${type}-${Date.now()}-${Math.random().toFixed(4)}`;
     const robot = new RobotEntity({
       id,
       position: pos.clone(),
       type,
       faction,
-      emergeFromGround: true,
+      emergeFromGround: !nanotechMaterialize,
+      nanotechMaterialize,
     });
     this.scene.add(robot.group);
     this.robots.push(robot);
@@ -614,12 +1023,130 @@ export class CombatSystem {
 
     this.armor?.update(delta);
     this.sword?.update(delta);
+    this.gun?.update(delta);
+
+    // If player is dead, disable combat actions and inputs
+    if (this.playerLifeState === 'DEAD') {
+      this.isShielding = false;
+      this.shieldGroup.visible = false;
+      return;
+    }
 
     this.attackCooldown = Math.max(0, this.attackCooldown - delta);
+    this.dodgeCooldown = Math.max(0, this.dodgeCooldown - delta);
 
-    // Player Sword Attack
-    if (inputs.attackPressed && this.attackCooldown <= 0) {
-      this.performAttack();
+    // Skill energy regeneration (slow drain when idle)
+    if (!this.skillActive) {
+      this.skillEnergy = Math.min(this.skillMaxEnergy, this.skillEnergy);
+    }
+
+    // Skill active countdown
+    if (this.skillActive) {
+      this.skillTimer -= delta;
+      if (this.skillTimer <= 0) {
+        this.skillActive = false;
+        this.skillTimer = 0;
+      }
+    }
+
+    // Combo reset timer
+    if (this.comboCount > 0) {
+      this.comboResetTimer -= delta;
+      if (this.comboResetTimer <= 0) {
+        this.comboCount = 0;
+        this.comboResetTimer = 0;
+      }
+    }
+
+    // Dodge roll update
+    if (this.isDodging) {
+      this.dodgeTimer -= delta;
+      if (this.dodgeTimer <= 0) {
+        this.isDodging = false;
+        this.dodgeTimer = 0;
+      }
+    }
+
+    // Player Dodge (Shift key) — grants brief iframes
+    if (inputs.dodgePressed && this.dodgeCooldown <= 0 && !this.isDodging) {
+      this.performDodge();
+    }
+
+    const playerPos = this.getPlayerPos();
+    this.playerGroup.getWorldDirection(this._forwardScratch);
+
+    // Stage 6 spatial triggers for Section 2 and Section 3
+    if (this.currentStageId === 6) {
+      if (this.stage6Section === 2 && !this.stage6Section2Spawned) {
+        // Trigger Section 2 when player reaches the midlevel ledge
+        const distToMidLedge = playerPos.distanceTo(new THREE.Vector3(14, 6.0, -36));
+        if ((playerPos.z <= -26 && playerPos.x >= 4) || distToMidLedge < 16) {
+          this.stage6Section2Spawned = true;
+          this.currentWaveIndex = 1;
+          this.waveObjectiveTarget = 2;
+          this.waveObjectiveProgress = 0;
+          this.spawnStage6Section(2);
+          this.bus.emit('combat:wave:start', {
+            stage: 6,
+            wave: 2,
+            totalWaves: 3,
+            title: 'HOSTILE UNITS DETECTED — SECTION 2/3',
+          });
+          this.bus.emit('objective:updated', this.getObjectiveInfo());
+        }
+      } else if (this.stage6Section === 3 && !this.stage6Section3Spawned) {
+        // Trigger Section 3 when player enters Reactor Sanctum
+        if (playerPos.z <= -106) {
+          this.stage6Section3Spawned = true;
+          this.currentWaveIndex = 2;
+          this.waveObjectiveTarget = 2;
+          this.waveObjectiveProgress = 0;
+          this.spawnStage6Section(3);
+          this.bus.emit('combat:wave:start', {
+            stage: 6,
+            wave: 3,
+            totalWaves: 3,
+            title: 'FINAL SECTION — 3/3',
+          });
+          this.bus.emit('objective:updated', this.getObjectiveInfo());
+        }
+      }
+    }
+
+    // Resolve a tap on release so the same press can also charge a power attack.
+    if (inputs.attackPressed) this.attackTapQueued = true;
+
+    // Player Sword Attack: Tap for combo attack, Hold LMB for charged power attack
+    if (inputs.attackHeld && this.attackCooldown <= 0 && !this.isDodging) {
+      this.chargeTimer += delta;
+      if (this.chargeTimer >= this.CHARGE_THRESHOLD) {
+        this.isCharging = true;
+        if (Math.random() < 0.45) {
+          this.particles.burst({
+            position: playerPos.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.8, 0.8 + Math.random() * 0.6, (Math.random() - 0.5) * 0.8)),
+            count: 4,
+            color: 0x00f0ff,
+            speed: 2.8,
+            spread: 0.6,
+            life: 0.28,
+            size: 0.14,
+          });
+        }
+      }
+    } else {
+      if (this.isCharging) {
+        this.performChargedAttack();
+      } else if (this.attackTapQueued && this.attackCooldown <= 0 && !this.isDodging) {
+        this.performComboAttack();
+      }
+      this.attackTapQueued = false;
+      this.isCharging = false;
+      this.chargeTimer = 0;
+    }
+
+    // Player Gun Attack (R key, Middle Mouse, or mobile GUN button)
+    if (inputs.gunPressed && this.gun?.isReadyToFire) {
+      this.gun.fire(playerPos, this._forwardScratch, this.projectiles, this.particles, this.bus);
     }
 
     // Defensive Energy Shield
@@ -628,8 +1155,8 @@ export class CombatSystem {
     this.shieldGroup.visible = this.isShielding;
 
     if (this.isShielding) {
-      const pulse = Math.sin(this.elapsed * 6) * 0.4;
-      this.shieldMaterial.emissiveIntensity = 2.8 + pulse;
+      const pulse = Math.sin(this.elapsed * 5) * 0.12;
+      this.shieldMaterial.emissiveIntensity = 0.65 + pulse;
       if (!wasShielding) {
         this.bus.emit('combat:shield:start', undefined);
       }
@@ -650,19 +1177,17 @@ export class CombatSystem {
       }
     }
 
-    const playerPos = this.getPlayerPos();
-    this.playerGroup.getWorldDirection(this._forwardScratch);
-
-    // Update Projectiles
+    // Update Projectiles (including player projectile hits against enemies)
     this.projectiles.update(
       delta,
       playerPos,
       this._forwardScratch,
       this.isShielding,
       (damage) => this.onPlayerTakeDamage(damage),
+      (projPos, damage) => this.checkPlayerProjectileHit(projPos, damage),
     );
 
-    // Manage Attack Tokens (prevents all enemies striking simultaneously)
+    // Manage Attack Tokens for hostiles
     this.coordinateAttackTokens(playerPos);
 
     // Update Robots & Companions
@@ -681,7 +1206,7 @@ export class CombatSystem {
               nearestComp.takeDamage(robot.damage * 0.8);
             },
             (orig, tgt) => {
-              this.projectiles.spawn(orig, tgt.clone().sub(orig).normalize(), 18, robot.damage);
+              this.projectiles.spawn(orig, tgt.clone().sub(orig).normalize(), 18, robot.damage, 0xff2200, 0.25, 4.0, 'enemy');
             },
           );
         } else {
@@ -691,13 +1216,13 @@ export class CombatSystem {
             this.elapsed,
             (pos) => this.onRobotMeleeAttack(robot, pos),
             (orig, tgt) => {
-              this.projectiles.spawn(orig, tgt.clone().sub(orig).normalize(), 18, robot.damage);
+              this.projectiles.spawn(orig, tgt.clone().sub(orig).normalize(), 18, robot.damage, 0xff2200, 0.25, 4.0, 'enemy');
             },
             (pos, radius, dmg) => this.onAreaShockwave(pos, radius, dmg),
           );
         }
       } else {
-        // Friendly companion
+        // Friendly companion ally
         const target = this.findNearestHostile(robot.position);
         if (target) {
           robot.update(
@@ -705,21 +1230,46 @@ export class CombatSystem {
             target.position,
             this.elapsed,
             () => {
-              target.takeDamage(ATTACK_DAMAGE * 0.7);
+              const defeated = target.takeDamage(ATTACK_DAMAGE * 0.75);
+              this.bus.emit('combat:hit', { robotId: target.id, damage: ATTACK_DAMAGE * 0.75 });
+              this.particles.burst({
+                position: target.position.clone().add(new THREE.Vector3(0, 1.0, 0)),
+                count: 18,
+                color: target.isElite ? 0xffaa00 : 0xff3300,
+                speed: 5.5,
+                spread: 1.2,
+                life: 0.35,
+                size: 0.15,
+              });
+              if (defeated) {
+                this.handleRobotDefeated(target);
+              }
             },
             (orig, tgt) => {
-              this.projectiles.spawn(orig, tgt.clone().sub(orig).normalize(), 22, 20, 0x00f0ff);
+              this.projectiles.spawn(orig, tgt.clone().sub(orig).normalize(), 24, 20, 0x00f0ff, 0.22, 3.5, 'player');
             },
           );
         } else {
-          robot.update(delta, playerPos, this.elapsed, () => {});
+          // No hostiles: follow hero with respectful leash
+          const distToHero = robot.position.distanceTo(playerPos);
+          if (distToHero > 4.5) {
+            robot.update(delta, playerPos, this.elapsed, () => {}, undefined, undefined, false);
+          } else {
+            // Idle safely near player
+            robot.update(delta, robot.position, this.elapsed, () => {}, undefined, undefined, false);
+          }
         }
       }
     }
 
-    // Active sword strike hit detection
+    // Filter out defeated companions to free companion slots
+    this.companions = this.companions.filter((c) => !c.isDefeated);
+
+    // Active sword strike hit detection — only checked during the active window
     if (this.sword?.inHitWindow) {
       this.checkSwordHits();
+    } else {
+      this.hitThisSwing.clear();
     }
 
     // Publish Boss HUD updates if boss is present
@@ -764,39 +1314,172 @@ export class CombatSystem {
     }
   }
 
-  private performAttack(): void {
-    this.attackCooldown = this.attackCooldownDuration;
+
+  /**
+   * Acrobatic combo system:
+   *  Hit 1 & 2: Fast light strikes (28 dmg, 0.48s cooldown)
+   *  Hit 3: Heavy finisher (72 dmg, longer recovery) — resets combo
+   *  Skill active: all strikes +40% damage and cyan burst
+   */
+  private performComboAttack(): void {
+    this.comboCount++;
+    this.comboResetTimer = this.COMBO_WINDOW;
+    this.hitThisSwing.clear();
+
+    const isHeavyFinisher = this.comboCount >= 3;
+    const skillBonus = this.skillActive ? 1.4 : 1.0;
+
+    if (isHeavyFinisher) {
+      // Heavy finisher: bigger damage, longer cooldown, radiant finisher burst
+      this.attackCooldown = this.HEAVY_COOLDOWN;
+      this.comboCount = 0;
+      this.comboResetTimer = 0;
+      this.sword?.startSwing();
+      const playerPos = this.getPlayerPos();
+      this.playerGroup.getWorldDirection(this._scratch);
+      this.bus.emit('combat:attack', { position: playerPos.clone(), facing: this._scratch.clone() });
+      this.particles.burst({
+        position: playerPos.clone().add(new THREE.Vector3(0, 1.1, 0)),
+        count: 28,
+        color: this.skillActive ? 0x00f0ff : 0x8a5cff,
+        speed: 8.5,
+        spread: 1.2,
+        life: 0.5,
+        size: 0.22,
+      });
+      this._currentSwingDamage = Math.round(this.HEAVY_DAMAGE * skillBonus);
+    } else {
+      // Light strikes: Hit 1 is 28 dmg, Hit 2 is 34 dmg
+      this.attackCooldown = this.attackCooldownDuration;
+      this.sword?.startSwing();
+      const playerPos = this.getPlayerPos();
+      this.playerGroup.getWorldDirection(this._scratch);
+      this.bus.emit('combat:attack', { position: playerPos.clone(), facing: this._scratch.clone() });
+      this.particles.burst({
+        position: playerPos.clone().add(new THREE.Vector3(0, 1.1, 0)),
+        count: 14,
+        color: this.skillActive ? 0xffffff : 0x00f0ff,
+        speed: 6.5,
+        spread: 0.9,
+        life: 0.38,
+        size: 0.14,
+      });
+      const baseDmg = this.comboCount === 2 ? 34 : this.LIGHT_DAMAGE;
+      this._currentSwingDamage = Math.round(baseDmg * skillBonus);
+    }
+  }
+
+  /**
+   * Charged Power Attack:
+   * Unleashed by holding attack (LMB/F) >= 0.45s and releasing.
+   * Deals heavy 85 damage with dual cyan & violet shockwave burst and longer recovery.
+   */
+  private performChargedAttack(): void {
+    this.attackCooldown = this.CHARGED_COOLDOWN;
+    this.comboCount = 0;
+    this.comboResetTimer = 0;
+    this.hitThisSwing.clear();
     this.sword?.startSwing();
 
     const playerPos = this.getPlayerPos();
     this.playerGroup.getWorldDirection(this._scratch);
+    this.bus.emit('combat:attack', { position: playerPos.clone(), facing: this._scratch.clone(), charged: true });
+    this.bus.emit('shake', { amount: 0.22 });
 
-    this.bus.emit('combat:attack', {
-      position: playerPos.clone(),
-      facing: this._scratch.clone(),
-    });
-
-    // Slash particle wave
+    // Radial cyan & violet shockwave bursts
     this.particles.burst({
       position: playerPos.clone().add(new THREE.Vector3(0, 1.1, 0)),
-      count: 16,
+      count: 40,
       color: 0x00f0ff,
-      speed: 6.5,
-      spread: 0.9,
-      life: 0.4,
-      size: 0.16,
+      speed: 9.5,
+      spread: 2.0,
+      life: 0.6,
+      size: 0.24,
+    });
+    this.particles.burst({
+      position: playerPos.clone().add(new THREE.Vector3(0, 1.1, 0)),
+      count: 24,
+      color: 0x8a5cff,
+      speed: 7.5,
+      spread: 1.6,
+      life: 0.5,
+      size: 0.18,
+    });
+
+    const skillBonus = this.skillActive ? 1.4 : 1.0;
+    this._currentSwingDamage = Math.round(this.CHARGED_DAMAGE * skillBonus);
+  }
+
+  /** Current damage to deal during the active sword swing (set by performComboAttack). */
+  private _currentSwingDamage = 42;
+
+  /**
+   * Dodge roll: grants iframes for DODGE_DURATION seconds, visual burst, and energy gain.
+   */
+  private performDodge(): void {
+    this.isDodging = true;
+    this.dodgeTimer = this.DODGE_DURATION;
+    this.dodgeCooldown = this.DODGE_COOLDOWN;
+
+    // Grant skill energy for well-timed dodge
+    this.skillEnergy = Math.min(this.skillMaxEnergy, this.skillEnergy + this.SKILL_ENERGY_PER_DODGE);
+
+    const playerPos = this.getPlayerPos();
+    this.particles.burst({
+      position: playerPos.clone().add(new THREE.Vector3(0, 0.6, 0)),
+      count: 20,
+      color: 0x00f0ff,
+      speed: 5.5,
+      spread: 1.4,
+      life: 0.3,
+      size: 0.12,
+      direction: this._forwardScratch.clone().negate(),
     });
   }
 
-  private checkSwordHits(): void {
-    this.sword!.getBladeTipWorld(this._tipScratch);
+  /**
+   * Activate the skill (if enough energy): enters power-strike mode for SKILL_DURATION seconds.
+   * While active, all attacks deal +40% damage and have enhanced visuals.
+   */
+  activateSkill(): void {
+    if (this.skillEnergy < this.SKILL_COST) return;
+    this.skillEnergy -= this.SKILL_COST;
+    this.skillActive = true;
+    this.skillTimer = this.SKILL_DURATION;
+
     const playerPos = this.getPlayerPos();
+    this.particles.burst({
+      position: playerPos.clone().add(new THREE.Vector3(0, 1.2, 0)),
+      count: 40,
+      color: 0x8a5cff,
+      speed: 7.0,
+      spread: 1.6,
+      life: 0.6,
+      size: 0.2,
+    });
+  }
+
+  get isSkillActive(): boolean {
+    return this.skillActive;
+  }
+
+  private checkSwordHits(): void {
+    if (!this.sword) return;
+    this.sword.getBladeTipWorld(this._tipScratch);
+    const playerPos = this.getPlayerPos();
+    // Use combo-driven damage if set, else fallback constant
+    const swingDamage = this._currentSwingDamage > 0 ? this._currentSwingDamage : ATTACK_DAMAGE;
 
     for (const robot of this.robots) {
       if (robot.faction !== 'hostile' || robot.state === 'SPAWNING' || robot.isDefeated) continue;
+      // Per-swing hit registration: ensure robot only takes damage once per sword swing
+      if (this.hitThisSwing.has(robot.id)) continue;
 
       const dist = this._tipScratch.distanceTo(robot.position);
-      if (dist < ATTACK_RANGE) {
+      const distToPlayer = playerPos.distanceTo(robot.position);
+      if (dist < ATTACK_RANGE || distToPlayer < 2.6) {
+        this.hitThisSwing.add(robot.id);
+
         // Check if robot is a Shield Defender blocking from the front
         if (robot.isAttackBlockedFrom(playerPos)) {
           this.bus.emit('combat:blocked', undefined);
@@ -813,14 +1496,18 @@ export class CombatSystem {
           continue;
         }
 
-        const defeated = robot.takeDamage(ATTACK_DAMAGE);
-        this.bus.emit('combat:hit', { robotId: robot.id, damage: ATTACK_DAMAGE });
+        const defeated = robot.takeDamage(swingDamage);
+        this.bus.emit('combat:hit', { robotId: robot.id, damage: swingDamage });
 
-        // Impact spark explosion
+        // Gain skill energy on successful hit
+        this.skillEnergy = Math.min(this.skillMaxEnergy, this.skillEnergy + this.SKILL_ENERGY_PER_HIT);
+
+        // Impact spark explosion — color varies with combo state
+        const hitColor = this.skillActive ? 0x8a5cff : robot.isElite ? 0xffaa00 : 0x00f0ff;
         this.particles.burst({
           position: robot.position.clone().add(new THREE.Vector3(0, 1.0, 0)),
           count: 24,
-          color: robot.isElite ? 0xffaa00 : 0xff3300,
+          color: hitColor,
           speed: 7,
           spread: 1.4,
           life: 0.38,
@@ -834,10 +1521,56 @@ export class CombatSystem {
     }
   }
 
+  defeatHostiles(): void {
+    for (const r of this.robots) {
+      if (r.faction === 'hostile' && !r.isDefeated) {
+        if (r.state === 'SPAWNING') {
+          r.state = 'CHASE';
+        }
+        const defeated = r.takeDamage(999);
+        if (defeated) {
+          this.handleRobotDefeated(r);
+        }
+      }
+    }
+  }
+
   private handleRobotDefeated(robot: RobotEntity): void {
     this.bus.emit('robot:defeated', { robotId: robot.id, position: robot.position.clone() });
 
     if (this.missionFinished) return;
+
+    if (this.currentStageId === 6) {
+      const activeHostiles = this.robots.filter((r) =>
+        r.id.startsWith(`stage6-section-${this.stage6Section}-robot-`) && r.faction === 'hostile' && !r.isDefeated,
+      ).length;
+      this.waveObjectiveProgress = Math.min(2, Math.max(0, 2 - activeHostiles));
+      this.bus.emit('objective:updated', this.getObjectiveInfo());
+
+      if (activeHostiles === 0) {
+        if (this.stage6Section === 1 && !this.stage6Section1Done) {
+          this.stage6Section1Done = true;
+          this.stage6Section = 2;
+          this.bus.emit('combat:wave:cleared', { stage: 6, wave: 1, totalWaves: 3 });
+          this.bus.emit('toast', { text: 'SECTION 1/3 CLEARED — ADVANCE TO MIDLEVEL SECTOR' });
+          this.bus.emit('objective:updated', this.getObjectiveInfo());
+        } else if (this.stage6Section === 2 && this.stage6Section2Spawned && !this.stage6Section2Done) {
+          this.stage6Section2Done = true;
+          this.stage6Section = 3;
+          this.bus.emit('combat:wave:cleared', { stage: 6, wave: 2, totalWaves: 3 });
+          this.bus.emit('toast', { text: 'SECTION 2/3 CLEARED — ASCEND TO REACTOR SANCTUM' });
+          this.bus.emit('objective:updated', this.getObjectiveInfo());
+        } else if (this.stage6Section === 3 && this.stage6Section3Spawned && !this.stage6Section3Done) {
+          this.stage6Section3Done = true;
+          this.stage6Section = 'complete';
+          this.missionFinished = true;
+          this.bus.emit('combat:wave:cleared', { stage: 6, wave: 3, totalWaves: 3 });
+          this.bus.emit('toast', { text: 'STAGE 6 OBJECTIVES COMPLETE' });
+          this.bus.emit('objective:updated', this.getObjectiveInfo());
+        }
+      }
+      return;
+    }
 
     this.waveObjectiveProgress++;
     this.bus.emit('objective:updated', this.getObjectiveInfo());
@@ -870,20 +1603,20 @@ export class CombatSystem {
   }
 
   private finishMission(): void {
+    if (this.currentStageId === 6) {
+      // Stage 6 completes via stepping into the physical exit portal, not modal bypass
+      return;
+    }
     this.missionFinished = true;
     this.bus.emit('objective:updated', this.getObjectiveInfo());
 
     if (this.currentStageId === 10) {
       this.bus.emit('combat:campaign:complete', undefined);
-      this.bus.emit('stage6:victory', undefined);
     } else {
       this.bus.emit('combat:stage:victory', {
         stage: this.currentStageId,
         nextStage: this.currentStageId + 1,
       });
-      if (this.currentStageId === 6) {
-        this.bus.emit('stage6:victory', undefined);
-      }
     }
   }
 
@@ -938,7 +1671,50 @@ export class CombatSystem {
     }
   }
 
+  private checkPlayerProjectileHit(projPos: THREE.Vector3, damage: number): boolean {
+    for (const robot of this.robots) {
+      if (robot.faction !== 'hostile' || robot.state === 'SPAWNING' || robot.isDefeated) continue;
+      const robotCenter = robot.position.clone().add(new THREE.Vector3(0, 1.0, 0));
+      if (projPos.distanceTo(robotCenter) < 1.35 * robot.scale) {
+        if (robot.isAttackBlockedFrom(projPos)) {
+          this.bus.emit('combat:blocked', undefined);
+          this.particles.burst({
+            position: robotCenter,
+            count: 20,
+            color: 0xffaa00,
+            speed: 5.5,
+            spread: 1.2,
+            life: 0.3,
+            size: 0.15,
+          });
+          return true;
+        }
+
+        const defeated = robot.takeDamage(damage);
+        this.bus.emit('combat:hit', { robotId: robot.id, damage });
+        this.particles.burst({
+          position: robotCenter,
+          count: 22,
+          color: robot.isElite ? 0xffaa00 : 0x00f0ff,
+          speed: 6.5,
+          spread: 1.3,
+          life: 0.35,
+          size: 0.16,
+        });
+
+        if (defeated) {
+          this.handleRobotDefeated(robot);
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
   private onPlayerTakeDamage(amount: number): void {
+    if (this.playerLifeState === 'DEAD') return;
+    if (this.isDodging) return; // Iframes: dodge roll protects against incoming damage!
+
     this.playerHealth = Math.max(0, this.playerHealth - amount);
     const playerPos = this.getPlayerPos();
 
@@ -953,6 +1729,18 @@ export class CombatSystem {
     });
 
     this.bus.emit('combat:damage_taken', { health: this.playerHealth });
+
+    // When health reaches 0, enter DEAD state
+    if (this.playerHealth <= 0) {
+      this.playerHealth = 0;
+      this.playerLifeState = 'DEAD';
+      this.isShielding = false;
+      this.shieldGroup.visible = false;
+      this.attackCooldown = 0;
+      this.sword?.resetSwing();
+
+      this.onPlayerDiedCallback?.();
+    }
   }
 
   private tryReboot(): void {
@@ -967,13 +1755,12 @@ export class CombatSystem {
         return;
       }
 
-      this.performReboot(robot);
-      return;
+      if (this.performReboot(robot)) return;
     }
   }
 
-  private performReboot(robot: RobotEntity): void {
-    robot.reboot();
+  private performReboot(robot: RobotEntity): boolean {
+    if (this.companions.includes(robot) || !robot.reboot()) return false;
     this.companions.push(robot);
 
     // Cyan energy transfer particle burst
@@ -988,6 +1775,7 @@ export class CombatSystem {
     });
 
     this.bus.emit('robot:rebooted', { robotId: robot.id, position: robot.position.clone() });
+    return true;
   }
 
   private findNearestHostile(from: THREE.Vector3): RobotEntity | null {

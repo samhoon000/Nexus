@@ -26,7 +26,7 @@ export class Portal {
     this.group.name = 'portal';
     const ringGeometry = new THREE.TorusGeometry(2.4, 0.22, 14, 64);
     const innerGeometry = new THREE.TorusGeometry(2.05, 0.06, 10, 64);
-    const discGeometry = new THREE.CircleGeometry(2.0, 48);
+    const discGeometry = new THREE.CircleGeometry(1.88, 64);
     const baseGeometry = new THREE.BoxGeometry(6.4, 0.5, 1.6);
     const postGeometry = new THREE.BoxGeometry(0.5, 1.6, 0.5);
     this.geometries.push(ringGeometry, innerGeometry, discGeometry, baseGeometry, postGeometry);
@@ -38,13 +38,17 @@ export class Portal {
       metalness: 0.7,
       roughness: 0.35,
     });
+    const discColor = new THREE.Color(ctx.theme.accent);
+    if (ctx.theme.accent === 0xff2200) discColor.setHex(0xc71e32);
     this.discMaterial = new THREE.MeshBasicMaterial({
-      color: ctx.theme.accent,
+      color: discColor,
       transparent: true,
-      opacity: 0,
+      opacity: 0.3,
       side: THREE.DoubleSide,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      depthTest: false,
+      blending: THREE.NormalBlending,
+      toneMapped: false,
     });
 
     this.ring = new THREE.Mesh(ringGeometry, ctx.materials.trim);
@@ -54,6 +58,7 @@ export class Portal {
     this.innerRing.position.y = 2.9;
     this.disc = new THREE.Mesh(discGeometry, this.discMaterial);
     this.disc.position.y = 2.9;
+    this.disc.renderOrder = 1;
     const base = new THREE.Mesh(baseGeometry, ctx.materials.shellMid);
     base.position.y = 0.25;
     base.receiveShadow = true;
@@ -77,7 +82,7 @@ export class Portal {
     if (open) {
       this.ctx.tweens.tween(0.9, (t) => {
         this.ringMaterial.emissiveIntensity = 0.25 + t * 2.4;
-        this.discMaterial.opacity = t * 0.55;
+        this.discMaterial.opacity = t * 0.3;
         this.disc.scale.setScalar(0.2 + 0.8 * t);
       }, easeOutBack);
       this.scratch.copy(this.position).y += 2.9;
@@ -105,7 +110,7 @@ export class Portal {
     if (this.isOpen) {
       this.pulse = 0.5 + 0.5 * Math.sin(elapsed * 2.2);
       this.ringMaterial.emissiveIntensity = 2.2 + this.pulse * 0.8;
-      this.disc.rotation.z = elapsed * 0.6;
+      this.discMaterial.opacity = 0.28 + this.pulse * 0.025;
     }
   }
 

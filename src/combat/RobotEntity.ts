@@ -29,6 +29,7 @@ export interface RobotConfig {
   type?: RobotType;
   faction?: RobotFaction;
   emergeFromGround?: boolean;
+  nanotechMaterialize?: boolean;
 }
 
 const HOSTILE_EMISSIVE = 0xff2200;
@@ -73,10 +74,11 @@ export class RobotEntity {
   private healthBarFill!: THREE.Mesh;
   private shieldBarrierMesh: THREE.Mesh | null = null;
 
-  // Ground emergence
+  // Ground emergence / Nanotech materialization
   private crackMeshes: THREE.Mesh[] = [];
   private spawnDepth = -2.5;
-  private readonly spawnDuration = 1.6;
+  private spawnDuration = 1.6;
+  readonly nanotechMaterialize: boolean;
 
   // AI & attack timers
   private stateTimer = 0;
@@ -86,6 +88,7 @@ export class RobotEntity {
   private attackDealsDamage = false;
   private attackDamageWindow = 0;
   private attackHitCount = 0;
+  private attacksEnabled = true;
 
   // Token system: can this entity attack now?
   hasAttackToken = false;
@@ -124,9 +127,18 @@ export class RobotEntity {
     this.group.scale.setScalar(this.scale);
     this.buildMesh();
 
-    if (config.emergeFromGround !== false) {
+    if (config.nanotechMaterialize) {
+      this.nanotechMaterialize = true;
+      this.spawnDuration = 2.2;
+      this.state = "SPAWNING";
+      this.bodyGroup.position.y = 0;
+      this.bodyGroup.scale.setScalar(0.01);
+      this.spawnDepth = 0;
+    } else if (config.emergeFromGround !== false) {
+      this.nanotechMaterialize = false;
       this.startEmerge();
     } else {
+      this.nanotechMaterialize = false;
       this.bodyGroup.position.y = 0;
       this.state = "CHASE";
       this.spawnDepth = 0;
@@ -160,6 +172,10 @@ export class RobotEntity {
 
   get isBoss(): boolean {
     return this.type === "warlord";
+  }
+
+  get isCompanion(): boolean {
+    return this.faction === "companion" || (this.faction as string) === "ally";
   }
 
   get isElite(): boolean {
@@ -537,8 +553,19 @@ export class RobotEntity {
     onMeleeAttack: (pos: THREE.Vector3) => void,
     onFireProjectile?: (origin: THREE.Vector3, targetPos: THREE.Vector3) => void,
     onShockwave?: (pos: THREE.Vector3, radius: number, damage: number) => void,
+    allowAttack = true,
   ): void {
     this.group.position.copy(this.position);
+    this.attacksEnabled = allowAttack;
+
+    if (!allowAttack && (this.state === 'TELEGRAPH' || this.state === 'ATTACK' || this.state === 'RECOVERY')) {
+      this.state = 'CHASE';
+      this.stateTimer = 0;
+      this.isTelegraphing = false;
+      this.attackDealsDamage = false;
+      this.attackDamageWindow = 0;
+      this.hasAttackToken = false;
+    }
 
     // Defeated animation
     if (this.state === "DEFEATED") {
@@ -581,8 +608,10 @@ export class RobotEntity {
         break;
     }
 
-    // Dynamic animations
-    this.bodyGroup.position.y = Math.sin(elapsed * 2.0 + this.id.charCodeAt(0)) * 0.04;
+    // Dynamic animations (only when active, not while spawning)
+    if (this.state !== "SPAWNING") {
+      this.bodyGroup.position.y = Math.sin(elapsed * 2.0 + this.id.charCodeAt(0)) * 0.04;
+    }
 
     // Telegraph visibility & scaling
     this.telegraphMesh.visible = this.state === "TELEGRAPH";
@@ -616,6 +645,33 @@ export class RobotEntity {
     this.stateTimer += dt;
     const t = Math.min(1, this.stateTimer / this.spawnDuration);
 
+    if (this.nanotechMaterialize) {
+      // Futuristic Nanotechnology Materialization
+      const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      const currentScale = THREE.MathUtils.lerp(0.02, 1.0, ease);
+      this.bodyGroup.scale.setScalar(currentScale);
+      this.bodyGroup.position.y = (1.0 - ease) * 0.35;
+
+      // Energy pulse during nanite matrix formation
+      const pulse = 1.0 + Math.sin(t * Math.PI * 5) * 0.75;
+      if (this.matEmissive) {
+        this.matEmissive.emissiveIntensity = pulse * 2.2;
+      }
+      if (this.matEye) {
+        this.matEye.emissiveIntensity = pulse * (t > 0.6 ? 2.6 : 0.6);
+      }
+
+      if (t >= 1) {
+        this.state = "CHASE";
+        this.stateTimer = 0;
+        this.bodyGroup.scale.setScalar(1.0);
+        this.bodyGroup.position.y = 0;
+        if (this.matEmissive) this.matEmissive.emissiveIntensity = 1.4;
+        if (this.matEye) this.matEye.emissiveIntensity = 2.0;
+      }
+      return;
+    }
+
     if (t >= 0.25) {
       for (const c of this.crackMeshes) c.visible = true;
     }
@@ -633,6 +689,7 @@ export class RobotEntity {
 
   private updateChase(dt: number, targetPos: THREE.Vector3): void {
     const dist = this.position.distanceTo(targetPos);
+    const canAttack = this.attacksEnabled && this.cooldownTimer <= 0 && (this.hasAttackToken || this.isCompanion);
 
     // Range-based positioning
     if (this.type === "ranger") {
@@ -649,7 +706,7 @@ export class RobotEntity {
       }
 
       // Check attack trigger
-      if (dist <= 18.0 && this.cooldownTimer <= 0 && this.hasAttackToken) {
+      if (dist <= 18.0 && canAttack) {
         this.state = "TELEGRAPH";
         this.stateTimer = 0;
         this.isTelegraphing = true;
@@ -669,7 +726,7 @@ export class RobotEntity {
       const dir = new THREE.Vector3(targetPos.x - this.position.x, 0, targetPos.z - this.position.z).normalize();
       this.position.addScaledVector(dir, dt * this.moveSpeed);
       this.position.y = targetPos.y;
-    } else if (this.cooldownTimer <= 0 && this.hasAttackToken) {
+    } else if (canAttack) {
       this.state = "TELEGRAPH";
       this.stateTimer = 0;
       this.isTelegraphing = true;
@@ -825,6 +882,8 @@ export class RobotEntity {
     this.hasAttackToken = false;
     this.isTelegraphing = false;
     this.telegraphMesh.visible = false;
+    this.attackDealsDamage = false;
+    this.attackDamageWindow = 0;
 
     // Boss cannot be rebooted
     if (!this.isBoss) {
@@ -838,15 +897,27 @@ export class RobotEntity {
     this.matWeapon.emissiveIntensity = 0.15;
   }
 
-  reboot(): void {
-    if (this.isBoss) return;
+  reboot(): boolean {
+    if (this.isBoss || !this.isDefeated || !this.isEligibleForReboot) return false;
     this.faction = "companion";
     this.isDefeated = false;
     this.state = "CHASE";
+    this.stateTimer = 0;
     this.health = this.maxHealth;
     this.isEligibleForReboot = false;
     this.markerRing.visible = false;
     this.bodyGroup.rotation.x = 0;
+    this.rightArmGroup.rotation.set(0, 0, 0);
+    this.leftArmGroup.rotation.set(0, 0, 0);
+    this.weaponGroup.rotation.set(0, 0, 0);
+    this.attackDealsDamage = false;
+    this.attackDamageWindow = 0;
+    this.attackHitCount = 0;
+    this.isTelegraphing = false;
+    this.telegraphMesh.visible = false;
+    this.cooldownTimer = 0.4;
+    this.hasAttackToken = false;
+    this.attacksEnabled = true;
 
     // Switch to companion cyan styling
     this.matEmissive.emissive.setHex(COMPANION_EMISSIVE);
@@ -856,6 +927,7 @@ export class RobotEntity {
     this.matWeapon.emissive.setHex(0x8a5cff);
     this.matWeapon.emissiveIntensity = 2.8;
     this.matHealthFg.emissive.setHex(COMPANION_EMISSIVE);
+    return true;
   }
 
   dispose(): void {

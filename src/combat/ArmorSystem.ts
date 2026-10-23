@@ -1,6 +1,15 @@
 import * as THREE from 'three';
 import type { CharacterRig } from '../player/CharacterRig';
 
+interface ArmorMotion {
+  group: THREE.Group;
+  startPosition: THREE.Vector3;
+  targetPosition: THREE.Vector3;
+  startQuaternion: THREE.Quaternion;
+  targetQuaternion: THREE.Quaternion;
+  elapsed: number;
+}
+
 /**
  * NEXUS Full-Body Cyan Knight Armor System.
  * Faithfully recreates the visual reference:
@@ -24,6 +33,8 @@ export class ArmorSystem {
   private readonly waistThighPieces: THREE.Group[] = [];
   private readonly shinBootPieces: THREE.Group[] = [];
   private readonly allPieces: THREE.Group[] = [];
+  private readonly homeTransforms = new Map<THREE.Group, { position: THREE.Vector3; quaternion: THREE.Quaternion }>();
+  private readonly motions: ArmorMotion[] = [];
 
   private elapsedTime = 0;
   private isMaterialized = false;
@@ -464,18 +475,39 @@ export class ArmorSystem {
     bone.add(g);
     list.push(g);
     this.allPieces.push(g);
+    this.homeTransforms.set(g, { position: g.position.clone(), quaternion: g.quaternion.clone() });
+  }
+
+  private revealPieces(pieces: THREE.Group[], reveal: boolean, x: number, y: number, z: number): void {
+    if (!reveal) return;
+    for (const [index, piece] of pieces.entries()) {
+      if (piece.visible) continue;
+      const home = this.homeTransforms.get(piece);
+      if (!home) continue;
+
+      piece.visible = true;
+      const side = index % 2 === 0 ? -1 : 1;
+      piece.position.copy(home.position).add(new THREE.Vector3(x * side, y, z));
+      this.motions.push({
+        group: piece,
+        startPosition: piece.position.clone(),
+        targetPosition: home.position.clone(),
+        startQuaternion: piece.quaternion.clone(),
+        targetQuaternion: home.quaternion.clone(),
+        elapsed: 0,
+      });
+    }
   }
 
   setStep(step: number): void {
     this.currentStep = step;
     const s = step;
 
-    // Visibility by step
-    for (const p of this.helmetPieces) p.visible = s >= 3;
-    for (const p of this.chestPieces) p.visible = s >= 4;
-    for (const p of this.armPieces) p.visible = s >= 5;
-    for (const p of this.waistThighPieces) p.visible = s >= 6;
-    for (const p of this.shinBootPieces) p.visible = s >= 7;
+    this.revealPieces(this.helmetPieces, s >= 3, 0, 0.58, -0.18);
+    this.revealPieces(this.chestPieces, s >= 4, 0, 0.12, 0.62);
+    this.revealPieces(this.armPieces, s >= 5, 0.48, 0.12, -0.12);
+    this.revealPieces(this.waistThighPieces, s >= 6, 0, 0.46, -0.1);
+    this.revealPieces(this.shinBootPieces, s >= 7, 0, -0.5, -0.08);
 
     // Emissive levels ramp up with suit assembly
     const progress = Math.max(0, Math.min(1, (s - 2) / 6));
@@ -489,7 +521,15 @@ export class ArmorSystem {
   }
 
   snapVisible(): void {
-    for (const p of this.allPieces) p.visible = true;
+    this.motions.length = 0;
+    for (const p of this.allPieces) {
+      p.visible = true;
+      const home = this.homeTransforms.get(p);
+      if (home) {
+        p.position.copy(home.position);
+        p.quaternion.copy(home.quaternion);
+      }
+    }
     this.currentStep = 9;
     this.isMaterialized = true;
     this.matCyanGlow.emissiveIntensity = 1.8;
@@ -498,7 +538,15 @@ export class ArmorSystem {
   }
 
   hide(): void {
-    for (const p of this.allPieces) p.visible = false;
+    this.motions.length = 0;
+    for (const p of this.allPieces) {
+      p.visible = false;
+      const home = this.homeTransforms.get(p);
+      if (home) {
+        p.position.copy(home.position);
+        p.quaternion.copy(home.quaternion);
+      }
+    }
     this.currentStep = 0;
     this.isMaterialized = false;
     this.matCyanGlow.emissiveIntensity = 0;
@@ -513,6 +561,16 @@ export class ArmorSystem {
   update(delta: number): void {
     this.elapsedTime += delta;
     const t = this.elapsedTime;
+
+    for (let i = this.motions.length - 1; i >= 0; i -= 1) {
+      const motion = this.motions[i];
+      motion.elapsed = Math.min(0.62, motion.elapsed + delta);
+      const progress = motion.elapsed / 0.62;
+      const eased = 1 - Math.pow(1 - progress, 3);
+      motion.group.position.lerpVectors(motion.startPosition, motion.targetPosition, eased);
+      motion.group.quaternion.slerpQuaternions(motion.startQuaternion, motion.targetQuaternion, eased);
+      if (progress >= 1) this.motions.splice(i, 1);
+    }
 
     if (this.isMaterialized || this.currentStep >= 4) {
       // Reactor and suit breathing glow — balanced, controlled, non-destructive
